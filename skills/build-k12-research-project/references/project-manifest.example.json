@@ -1,0 +1,340 @@
+{
+  "project": {
+    "title": "示例：真实问题导向的初中某学科学习任务设计研究",
+    "leader": "待填写",
+    "school": "待填写",
+    "subject": "待填写",
+    "related_subjects": [],
+    "stage": "初中",
+    "level": "待确认",
+    "year": 2026
+  },
+  "governance": {
+    "current_date": "2026-08-12",
+    "project_status": "ongoing",
+    "extension_approved_until": null,
+    "consent_status": "planned",
+    "data_cutoff": null
+  },
+  "generation_contract": {
+    "package_scope": "custom",
+    "truth_state": "planning",
+    "delivery_state": "full-lifecycle-scaffold",
+    "batch_mode": "single-snapshot",
+    "unknown_handling": "structured-pending",
+    "target_versions": ["working", "submission"],
+    "coverage_exemptions": []
+  },
+  "submission_requirements": {
+    "status": "pending",
+    "authority": "待确认",
+    "year": 2026,
+    "verified_at": null,
+    "deadline": null,
+    "notice_source_ids": ["S-OFFICIAL-01"],
+    "template_source_ids": ["S-OFFICIAL-01"],
+    "required_material_ids": ["M01", "M02", "M06"],
+    "anonymous_required": null,
+    "submission_mode": "pending",
+    "file_rules": {
+      "max_size_mb": null,
+      "naming_rule": null,
+      "copies": null
+    }
+  },
+  "contributors": [
+    {
+      "id": "P01",
+      "name": "待填写",
+      "role": "负责人",
+      "is_approved_member": true,
+      "affiliation": "待填写",
+      "confirmed": false
+    }
+  ],
+  "timeline": {
+    "preliminary_research": "2026-01-10",
+    "preliminary_label": "立项前期问题调查",
+    "application": "2026-03-01",
+    "approval": "2026-06-01",
+    "opening": "2026-07-01",
+    "instrument_design": "2026-07-02",
+    "pilot": "2026-08-01",
+    "data_collection_start": "2026-09-01",
+    "data_collection_end": "2026-10-01",
+    "analysis": "2026-11-01",
+    "intervention_start": "2026-12-01",
+    "midterm": "2027-06-01",
+    "intervention_end": "2027-12-01",
+    "completion": "2028-06-01"
+  },
+  "research_questions": [
+    {"id": "Q1", "text": "学生在该学习任务中的主要困难是什么？"}
+  ],
+  "logic_mappings": [
+    {
+      "question_id": "Q1",
+      "goal": "识别主要困难及其表现",
+      "content": "现状与成因调查",
+      "method": "问卷、访谈和课堂观察",
+      "activity": "开展预测试、正式调查和三角互证",
+      "output": "现状调查分析报告",
+      "evidence": "原始数据、访谈记录、观察记录"
+    }
+  ],
+  "samples": [
+    {
+      "name": "学生问卷",
+      "planned_n": 100,
+      "actual_n": null,
+      "data_source": "待正式调查后填写"
+    }
+  ],
+  "instruments": [
+    {
+      "id": "Q-STU-01",
+      "name": "学生问卷",
+      "status": "draft",
+      "raw_evidence": null,
+      "analysis_output": null
+    }
+  ],
+  "interventions": [
+    {
+      "id": "INTV-01",
+      "name": "真实问题导向学习任务策略",
+      "status": "planned",
+      "core_components": ["真实问题", "递进任务", "学生成果", "量规评价"],
+      "planned_dosage": "待根据课时确定",
+      "actual_dosage": null,
+      "coverage": null,
+      "deviations": [],
+      "evidence_ids": []
+    }
+  ],
+  "cases": [
+    {
+      "id": "CASE-01",
+      "title": "示例学习任务案例",
+      "status": "designed",
+      "author_ids": ["P01"],
+      "implementation": null,
+      "evidence_ids": []
+    }
+  ],
+  "evidence": [
+    {
+      "id": "E-STU-SURVEY-RAW",
+      "type": "raw-data",
+      "status": "planned",
+      "privacy_class": "confidential",
+      "collected_date": null,
+      "source_file": null,
+      "consent_status": "planned"
+    },
+    {
+      "id": "PHO-2026-001",
+      "type": "photo",
+      "status": "planned",
+      "privacy_class": "confidential",
+      "collected_date": null,
+      "location": null,
+      "activity": "待实施的代表性课堂任务",
+      "photographer_source": null,
+      "source_file": null,
+      "derivative_file": null,
+      "original_sha256": null,
+      "derivative_sha256": null,
+      "consent_status": "planned",
+      "publication_scope": "internal",
+      "face_handling": "restricted-original",
+      "caption": null,
+      "alt_text": null,
+      "material_ids": ["M05"],
+      "claim_ids": [],
+      "transformation_log": []
+    }
+  ],
+  "sources": [
+    {
+      "id": "S-OFFICIAL-01",
+      "title": "当年课题申报通知及附件",
+      "source_type": "official-template",
+      "verification_status": "pending",
+      "verified_at": null,
+      "valid_for_year": 2026,
+      "locator": "待取得官方原件",
+      "used_in": ["M01"]
+    }
+  ],
+  "materials": [
+    {
+      "id": "M00",
+      "name": "课题材料包注意事项_真实性与待办清单",
+      "material_role": "attention-items",
+      "status": "planned",
+      "output_format": "docx",
+      "format_profile": "attention-items",
+      "reference_template": null,
+      "reference_source_id": null,
+      "stage": "supporting",
+      "privacy_class": "internal",
+      "version": "0.1",
+      "data_cutoff": null,
+      "required_for_submission": false,
+      "file_path": null,
+      "sha256": null,
+      "qa": {"content": "pending", "format": "pending", "render": "pending", "privacy": "pending", "data": "not-applicable", "photo": "not-applicable"},
+      "depends_on": []
+    },
+    {
+      "id": "M01",
+      "name": "申请书",
+      "material_role": "application",
+      "status": "draft",
+      "output_format": "docx",
+      "format_profile": "official-exact",
+      "reference_template": "待取得当年官方模板",
+      "reference_source_id": "S-OFFICIAL-01",
+      "stage": "application",
+      "privacy_class": "submission",
+      "version": "0.1",
+      "data_cutoff": null,
+      "required_for_submission": true,
+      "file_path": null,
+      "sha256": null,
+      "qa": {"content": "pending", "format": "pending", "render": "pending", "privacy": "pending", "data": "not-applicable", "photo": "not-applicable"},
+      "qa_records": {
+        "content": {"checked_at": null, "method": null, "report_path": null, "reviewer": null},
+        "format": {"checked_at": null, "method": null, "report_path": null, "reviewer": null},
+        "render": {"checked_at": null, "method": null, "report_path": null, "reviewer": null},
+        "privacy": {"checked_at": null, "method": null, "report_path": null, "reviewer": null}
+      },
+      "depends_on": []
+    },
+    {
+      "id": "M02",
+      "name": "开题报告",
+      "material_role": "opening",
+      "status": "planned",
+      "output_format": "docx",
+      "format_profile": "official-exact",
+      "reference_template": "待取得管理单位模板",
+      "reference_source_id": "S-OFFICIAL-01",
+      "stage": "opening",
+      "privacy_class": "submission",
+      "version": "0.1",
+      "data_cutoff": null,
+      "required_for_submission": true,
+      "file_path": null,
+      "sha256": null,
+      "qa": {"content": "pending", "format": "pending", "render": "pending", "privacy": "pending", "data": "not-applicable", "photo": "not-applicable"},
+      "depends_on": ["M01"]
+    },
+    {
+      "id": "M03",
+      "name": "学生问卷分析报告",
+      "material_role": "analysis-report",
+      "status": "planned",
+      "output_format": "docx",
+      "format_profile": "analysis-report",
+      "reference_template": null,
+      "reference_source_id": null,
+      "stage": "analysis",
+      "privacy_class": "internal",
+      "version": "0.1",
+      "data_cutoff": null,
+      "required_for_submission": false,
+      "file_path": null,
+      "sha256": null,
+      "qa": {"content": "pending", "format": "pending", "render": "pending", "privacy": "pending", "data": "pending", "photo": "not-applicable"},
+      "depends_on": ["M02", "M04"]
+    },
+    {
+      "id": "M04",
+      "name": "课题研究数据工作簿",
+      "material_role": "data-workbook",
+      "status": "planned",
+      "output_format": "xlsx",
+      "format_profile": "spreadsheet-workbook",
+      "reference_template": null,
+      "reference_source_id": null,
+      "required_sheets": ["项目说明", "变量编码", "原始数据", "清理编码", "统计分析", "图表结果", "证据索引", "材料进度"],
+      "allowed_hidden_sheets": [],
+      "stage": "data",
+      "privacy_class": "confidential",
+      "version": "0.1",
+      "data_cutoff": null,
+      "required_for_submission": false,
+      "file_path": null,
+      "sha256": null,
+      "qa": {"content": "pending", "format": "pending", "render": "pending", "privacy": "pending", "data": "pending", "photo": "not-applicable"},
+      "depends_on": ["M02"]
+    },
+    {
+      "id": "M05",
+      "name": "研究过程照片证据册",
+      "material_role": "evidence-book",
+      "status": "planned",
+      "output_format": "docx",
+      "format_profile": "evidence-sheet",
+      "reference_template": null,
+      "reference_source_id": null,
+      "stage": "supporting",
+      "privacy_class": "submission",
+      "version": "0.1",
+      "data_cutoff": null,
+      "required_for_submission": false,
+      "file_path": null,
+      "sha256": null,
+      "qa": {"content": "pending", "format": "pending", "render": "pending", "privacy": "pending", "data": "not-applicable", "photo": "pending"},
+      "photo_evidence_ids": ["PHO-2026-001"],
+      "depends_on": ["M02"]
+    },
+    {
+      "id": "M06",
+      "name": "最终研究报告",
+      "material_role": "final-report",
+      "status": "planned",
+      "output_format": "docx",
+      "format_profile": "analysis-report",
+      "reference_template": null,
+      "reference_source_id": null,
+      "stage": "final",
+      "privacy_class": "submission",
+      "version": "0.1",
+      "data_cutoff": null,
+      "required_for_submission": true,
+      "file_path": null,
+      "sha256": null,
+      "qa": {"content": "pending", "format": "pending", "render": "pending", "privacy": "pending", "data": "pending", "photo": "not-applicable"},
+      "depends_on": ["M03", "M04"]
+    }
+  ],
+  "commitments": [
+    {
+      "id": "OUT-01",
+      "name": "研究报告",
+      "promised_in": "M01",
+      "due_date": "2028-06-01",
+      "status": "planned",
+      "material_ids": ["M06"],
+      "change_approval_id": null
+    }
+  ],
+  "claims": [
+    {
+      "text": "学生的主要学习困难将在调查后确定",
+      "status": "planned",
+      "evidence_ids": []
+    }
+  ],
+  "evaluation_weights": {
+    "知识运用": 25,
+    "问题分析": 20,
+    "实践探究": 20,
+    "合作参与": 15,
+    "成果表达": 15,
+    "反思改进": 5
+  }
+}
