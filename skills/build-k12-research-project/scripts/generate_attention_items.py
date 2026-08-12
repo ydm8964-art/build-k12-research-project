@@ -93,6 +93,30 @@ ROLE_LABELS = {
 
 SUBJECT_PROFILES = (
     {
+        "label": "学校管理、校本研修与教师发展", "keywords": ("学校管理", "校本研修", "教师发展", "教研组", "备课组"),
+        "originals": "制度/方案版本、会议与研修签到、需求调查、任务分工、过程记录、教师成果、应用反馈和批准文件",
+        "outcomes": "教师专业行为、协作质量、资源形成、课堂应用和组织改进；分别保留教师与学校层面证据",
+        "checks": "制度适用范围、岗位职责、教师评价口径、研修主题与课程教学问题的一致性",
+        "risks": "教师个人评价和绩效信息最小化；参与自愿与行政管理边界；外部培训资源版权和成果署名",
+        "photos": (("研修准备", "真实需求分析、资料准备与任务分工"), ("协作研修", "集体备课、同课异构或专题研讨过程"), ("应用反馈", "课堂应用、成果交流和改进反馈；教师个人评价受控")),
+    },
+    {
+        "label": "幼儿教育与幼小衔接", "keywords": ("幼儿园", "学前教育", "幼小衔接", "幼儿教育"),
+        "originals": "游戏/活动方案、连续观察记录、儿童作品、家园沟通与同意、环境材料、发展性评价和教师反思",
+        "outcomes": "参与、交往、习惯、动作、语言和探究过程的多时点描述；不使用超前学科训练或单次测试定论",
+        "checks": "年龄适宜性、活动时长、游戏化与生活化、幼儿发展规律和幼小双向衔接边界",
+        "risks": "监护人同意、儿童隐私与肖像、不过度测评/贴标签、游戏材料与场地安全、家园信息保密",
+        "photos": (("环境材料", "不识别个人的活动环境、材料和安全准备"), ("游戏过程", "经同意的游戏/生活活动远景或背影"), ("成长作品", "匿名作品、观察记录和教师反思；不公开敏感发展档案")),
+    },
+    {
+        "label": "特殊教育与融合教育", "keywords": ("特殊教育", "融合教育", "随班就读", "资源教室"),
+        "originals": "个别化教育/支持方案、合理便利记录、观察与功能性表现、家长同意、协作记录和去标识成果",
+        "outcomes": "个体基线下的参与、沟通、学习和生活技能变化；使用多时点个案证据，不与普通群体简单排名",
+        "checks": "个体目标、支持策略、辅助技术版本、评价适配、无障碍与学段课程要求",
+        "risks": "残障和健康信息高度敏感；最小化披露、尊严与不贴标签、监护人同意、个案材料严格去标识",
+        "photos": (("无障碍准备", "环境调整、支持工具与材料，不呈现身份信息"), ("支持过程", "经明确同意的教学支持过程，优先背影/局部"), ("个体成果", "去标识作品与成长记录；敏感档案不进入公开材料")),
+    },
+    {
         "label": "心理健康、德育与班主任工作", "keywords": ("心理", "班主任", "德育", "生命教育"),
         "originals": "活动方案、告知同意、匿名量表/访谈、活动记录、转介预案和过程反思",
         "outcomes": "参与和技能表现、匿名趋势、过程反馈；不越界作临床诊断或强因果结论",
@@ -284,7 +308,11 @@ def gather_issues(data: dict, as_of: date) -> list[Issue]:
             continue
         issues.append(Issue("必须补充", "来源核验", f"来源{source.get('id', '未编号')}《{source.get('title', '未命名')}》尚未核验", "政策、课程标准、官方附件或文献必须可追溯", f"从权威渠道取得原件并核对发布日期、文号、适用年度和定位；责任人：{source.get('owner', '课题负责人')}", f"使用位置：{source.get('used_in', []) or '主清单登记位置'}；完成标准：verification_status=verified"))
 
-    materials = [item for item in data.get("materials", []) if isinstance(item, dict)]
+    materials = [
+        item
+        for item in data.get("materials", [])
+        if isinstance(item, dict) and item.get("included_in_batch") is not False
+    ]
     for item in materials:
         if item.get("material_role") == "attention-items" or item.get("status") in READY:
             continue
@@ -436,6 +464,12 @@ def gather_original_rows(data: dict) -> list[list[str]]:
 
 def gather_subject_rows(data: dict) -> list[list[str]]:
     project = data.get("project", {}) if isinstance(data.get("project"), dict) else {}
+    coverage = data.get("subject_coverage", [])
+    coverage_by_subject = {
+        str(item.get("subject")): item
+        for item in coverage
+        if isinstance(item, dict) and str(item.get("subject", "")).strip()
+    }
     subjects = [(display(project.get("subject"), "主学科未确认"), "主学科")]
     related = project.get("related_subjects", [])
     if isinstance(related, list):
@@ -448,7 +482,12 @@ def gather_subject_rows(data: dict) -> list[list[str]]:
             continue
         seen.add(subject)
         profile = profile_for_subject(subject)
-        standard = completion
+        record = coverage_by_subject.get(subject, {})
+        function = str(record.get("research_function") or "未登记该学科在课题中的具体研究功能")
+        standards = str(record.get("standards_reference") or "未登记课程标准/教材范围")
+        reviewer = str(record.get("reviewer") or "未指定")
+        review_status = str(record.get("review_status") or "pending")
+        standard = f"研究功能：{function}；课标/教材：{standards}；复核人：{reviewer}（{review_status}）。{completion}"
         if profile is GENERIC_SUBJECT_PROFILE:
             standard += "；负责人须补充本学科课程标准、典型学习成果、评价量规和专项风险后再进入实施阶段"
         rows.append([f"{role}：{subject}｜{profile['label']}", profile["originals"], profile["outcomes"], profile["checks"], profile["risks"], standard])

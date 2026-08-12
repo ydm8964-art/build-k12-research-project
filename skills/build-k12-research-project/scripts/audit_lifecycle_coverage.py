@@ -25,7 +25,9 @@ GROUPS = {
     "practice-carrier": {"lesson-plan", "task-sheet", "case", "casebook"},
     "evaluation-tool": {"rubric", "assessment-tool"},
     "process-management": {"fidelity-log", "meeting-record", "progress-report"},
-    "photo-register": {"photo-register"},
+    # The standard data workbook contains the dedicated “照片登记” sheet, so one
+    # audited workbook can satisfy the register group without duplicating files.
+    "photo-register": {"photo-register", "data-workbook"},
     "evidence-book": {"evidence-book"},
     "final-report": {"final-report"},
     "closing-application": {"closing-application"},
@@ -76,7 +78,11 @@ def audit(data: dict, final: bool) -> tuple[list[str], list[str]]:
     if unknown_exemptions:
         errors.append(f"coverage_exemptions含未知组：{sorted(unknown_exemptions)}")
 
-    materials = [item for item in data.get("materials", []) if isinstance(item, dict)]
+    materials = [
+        item
+        for item in data.get("materials", [])
+        if isinstance(item, dict) and item.get("included_in_batch") is not False
+    ]
     delivery_state = generation.get("delivery_state")
     require_ready = {
         "application-ready": {"attention-file", "application", "anonymous-form"},

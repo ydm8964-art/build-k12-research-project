@@ -73,6 +73,7 @@ description: 为贵州省及黔东南州中小学教师规划、申报、实施�
 - 成果核销：申请书承诺名称、计划日期、实际文件、状态、证明和获批变更；
 - 实施保真度：策略核心成分、计划/实际课次与时长、覆盖对象、执行质量、偏离原因和证据。
 - 注意事项快照：当前阻断项、阶段必须补充、真实照片任务、其他真实原件、学科专项证据与风险、时间冲突、签章事项和建议增强材料；每项登记责任人、最迟时间、目标材料及完成标准。
+- 学科覆盖表：主学科和每个实际关联学科分别登记研究功能、课程标准/教材范围、专项工具与证据、复核人和复核状态；`subject_coverage`必须与`subject + related_subjects`一一对应，不允许只在题目中写“跨学科”。
 
 同时建立三张控制表：
 
@@ -83,6 +84,14 @@ description: 为贵州省及黔东南州中小学教师规划、申报、实施�
 先向用户展示“课题逻辑摘要＋材料目录＋时间轴”。只有题目已确认且必要事实足够时，才开始正式生成。
 
 用户要求一次性生成时，只设置一个题目确认节点。确认后冻结同一主清单快照，按`application-kit/implementation-kit/full-lifecycle-kit/closing-kit`整批生成；已登记的信息不重复询问。未来事实缺失时仍可生成实施工具和结果材料骨架，但对应文件必须保持`pending-data/pending-photo/pending-signature`，并把整套状态标为`full-lifecycle-scaffold`，不能伪称结题终稿。
+
+题目确认且一次采集信息完整后，优先以[project-intake.example.json](references/project-intake.example.json)为字段样例创建独立输入JSON，再运行初始化器。初始化器固定创建26项生命周期角色、标准文件夹、项目主清单、根目录注意事项、交付索引和数据工作簿草稿，不覆盖已有控制文件：
+
+```bash
+python scripts/initialize_project_package.py --intake project-intake.json --root delivery-folder
+```
+
+初始化产物是可继续制作的`scaffold`；DOCX/XLSX在完成真实内容填充、渲染和QA前保持`draft`。生成或更新单份文件后，使用`register_material_file.py`登记相对路径、SHA-256和状态；提升为`ready`必须提供真实QA报告，禁止只改JSON状态。
 
 ## 阶段三：按依赖顺序生成
 
@@ -127,6 +136,8 @@ description: 为贵州省及黔东南州中小学教师规划、申报、实施�
 插入真实照片时，先登记原件和授权，再制作派生副本并插入。优先内嵌图片，保持长宽比；每张证据照片必须有连续图号、规范图题、照片ID、真实日期/活动、正文交叉引用和有意义的替代文本。匿名/公开版还要打码或裁切可识别人物并清理图片/DOCX元数据。图片修改或增删后重新编号、更新交叉引用并渲染逐页检查。
 
 制作 XLSX 时调用电子表格能力，按“项目说明—变量编码—原始数据—清理/编码—统计分析—图表结果—证据索引—照片登记—材料进度”分层。无官方电子表格时，直接复制`assets/templates/project-data-workbook.xlsx`作为结构母版；如需重建，先加载Codex工作区依赖，把`build_generic_xlsx_template.mjs`和`normalize_xlsx_views.py`复制到同一可写工作目录，并建立指向加载器所返回`node_modules`的符号链接，再用返回的Node运行生成脚本，不得猜测或导入运行时内部路径。兼容脚本只补足导出器未物化的标准冻结窗格。它不是官方报送表，不得替代当年附件。原始数据与分析分开，派生值使用公式，设置数据验证、筛选、冻结窗格和正确数据类型。导出前检查关键区域、公式错误并渲染查看每个工作表。
+
+初始化后不要把空白工作簿直接交付。把`populate_project_workbook.mjs`与`normalize_xlsx_views.py`复制到同一可写运行目录，使用工作区依赖提供的Node和`node_modules`，从同一主清单写入项目说明、证据、照片和26项材料进度，并用`--qa-dir`渲染全部9张工作表；输出仍是草稿，真实数据区不自动伪填。
 
 Word与Excel必须使用同一项目主清单、变量编码和统计口径。Word中的频数、比例、样本量、表图编号应能追溯到XLSX具体工作表和区域。
 
@@ -226,6 +237,8 @@ python scripts/run_project_preflight.py project-manifest.json --root delivery-fo
 
 单项脚本用于定位和修复具体问题；一键预检是宣布“机器审计通过”的统一入口。`qa.*=passed`必须有`qa_records`记录核验日期、方法和报告/审阅人，不能只靠人工改状态。预检报告中的`manual_gates`仍须逐项完成。
 
+任何上游事实变化时，把新主清单设为`batch_mode=incremental`，填写新`snapshot_id`和旧`parent_snapshot_id`，再运行`plan_incremental_refresh.py old.json new.json --out refresh-plan.json`；按报告重新生成所有受影响材料并重做QA，不得仅手改某一个Word标题或Excel单元格。
+
 一键预检同时运行生命周期覆盖审计。`full-lifecycle-kit`至少包含注意事项文件、申报、开题、伦理、工具、编码、原始证据、数据工作簿、诊断分析、干预、实践载体、评价、过程管理、照片台账、证据册、最终报告、结题申请、成果目录、证明/鉴定和交付索引等角色；确实不适用的组必须在`coverage_exemptions`写明理由，不能靠删材料通过。
 
 ## 输出与沟通规则
@@ -243,4 +256,4 @@ python scripts/run_project_preflight.py project-manifest.json --root delivery-fo
 - 正式交付默认保留内部工作版，并按用途另存报送版、匿名版或公开版；不得把含完整个人信息和学生映射表的工作版直接公开。
 - 只有必交材料、承诺成果、证据、格式、隐私和文件夹审计全部通过时，才使用“整套可直接提交”；否则明确标注最接近的待办状态。
 - “整套可直接提交”还要求当年要求快照为`verified`、一键预检零错误、所有机器与人工QA有可追溯记录；警告必须逐项判定为已解决或有书面接受理由。
-- 对整套状态只使用`application-ready/implementation-ready/full-lifecycle-scaffold/closing-ready`。只有真实结果和结题证据齐全时才可使用`closing-ready`；一次生成的未来材料骨架不能标为“结题可提交”。
+- 整套状态使用`application-scaffold/application-ready`、`implementation-scaffold/implementation-ready`、`full-lifecycle-scaffold`、`closing-scaffold/closing-ready`。`scaffold`表示结构已建立但尚有内容/格式/证据/签章门槛；只有真实结果和结题证据齐全时才可使用`closing-ready`。

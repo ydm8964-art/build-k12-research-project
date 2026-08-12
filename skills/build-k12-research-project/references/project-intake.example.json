@@ -1,0 +1,216 @@
+{
+  "project": {
+    "title": "真实问题导向的初中地理区域认知任务设计研究",
+    "leader": "示例教师甲",
+    "school": "贵州省黔东南州示例学校",
+    "subject": "地理",
+    "related_subjects": [],
+    "stage": "初中",
+    "level": "州级",
+    "year": 2026
+  },
+  "governance": {
+    "current_date": "2026-08-13",
+    "project_status": "ongoing",
+    "extension_approved_until": null,
+    "consent_status": "planned",
+    "data_cutoff": null
+  },
+  "generation_contract": {
+    "package_scope": "full-lifecycle-kit",
+    "truth_state": "implementing",
+    "batch_mode": "single-snapshot",
+    "unknown_handling": "structured-pending",
+    "target_versions": [
+      "working",
+      "submission"
+    ],
+    "coverage_exemptions": []
+  },
+  "submission_requirements": {
+    "status": "pending",
+    "authority": "黔东南州教育科研管理部门",
+    "year": 2026,
+    "verified_at": null,
+    "deadline": null,
+    "notice_source_ids": [],
+    "template_source_ids": [],
+    "required_material_ids": [],
+    "anonymous_required": null,
+    "submission_mode": "pending",
+    "file_rules": {
+      "max_size_mb": null,
+      "naming_rule": null,
+      "copies": null
+    }
+  },
+  "contributors": [
+    {
+      "id": "P01",
+      "name": "示例教师甲",
+      "role": "负责人",
+      "is_approved_member": true,
+      "affiliation": "贵州省黔东南州示例学校",
+      "confirmed": true
+    }
+  ],
+  "subject_coverage": [
+    {
+      "subject": "地理",
+      "role": "main",
+      "research_function": "承担区域认知核心问题、地图与资料证据分析及主要学习评价",
+      "standards_reference": "义务教育地理课程标准（2022年版）相应学段内容要求，正式材料须登记页码/条目",
+      "reviewer": "示例教师甲",
+      "review_status": "confirmed"
+    }
+  ],
+  "timeline": {
+    "preliminary_research": "2026-01-10",
+    "preliminary_label": "立项前期问题调查",
+    "application": "2026-03-01",
+    "approval": "2026-06-01",
+    "opening": "2026-07-01",
+    "instrument_design": "2026-07-10",
+    "pilot": "2026-08-20",
+    "data_collection_start": "2026-09-01",
+    "data_collection_end": "2026-10-31",
+    "analysis": "2026-11-30",
+    "intervention_start": "2026-12-01",
+    "midterm": "2027-06-01",
+    "intervention_end": "2027-12-01",
+    "completion": "2028-06-01"
+  },
+  "research_questions": [
+    {
+      "id": "Q1",
+      "text": "学生在区域认知任务中存在哪些可观察的学习困难？"
+    }
+  ],
+  "logic_mappings": [
+    {
+      "question_id": "Q1",
+      "goal": "识别主要困难及其表现",
+      "content": "区域认知学习现状与原因调查",
+      "method": "问卷、访谈、课堂观察和作品分析",
+      "activity": "预测试、正式调查与多源证据互证",
+      "output": "现状诊断与综合分析报告",
+      "evidence": "原始数据、访谈记录、观察记录与学生作品"
+    }
+  ],
+  "samples": [
+    {
+      "name": "学生问卷",
+      "planned_n": 100,
+      "actual_n": null,
+      "data_source": null
+    }
+  ],
+  "instruments": [
+    {
+      "id": "Q-STU-01",
+      "name": "学生问卷",
+      "status": "draft",
+      "raw_evidence": null,
+      "analysis_output": null
+    }
+  ],
+  "evidence": [
+    {
+      "id": "E-STU-SURVEY-RAW",
+      "type": "raw-data",
+      "status": "planned",
+      "privacy_class": "confidential",
+      "collected_date": null,
+      "delivery_included": false,
+      "source_file": null,
+      "source_sha256": null,
+      "custody_record": null,
+      "consent_status": "planned"
+    },
+    {
+      "id": "PHO-2026-001",
+      "type": "photo",
+      "status": "planned",
+      "privacy_class": "confidential",
+      "collected_date": null,
+      "location": null,
+      "activity": "区域认知任务课堂实施",
+      "photographer_source": null,
+      "delivery_included": false,
+      "source_file": null,
+      "custody_record": null,
+      "derivative_file": null,
+      "original_sha256": null,
+      "derivative_sha256": null,
+      "consent_status": "planned",
+      "publication_scope": "internal",
+      "face_handling": "restricted-original",
+      "caption": null,
+      "alt_text": null,
+      "material_ids": [
+        "M20"
+      ],
+      "claim_ids": [],
+      "transformation_log": []
+    }
+  ],
+  "interventions": [
+    {
+      "id": "INTV-01",
+      "name": "真实问题导向区域认知任务策略",
+      "status": "planned",
+      "core_components": [
+        "真实区域问题",
+        "地图与资料证据",
+        "递进任务",
+        "量规反馈"
+      ],
+      "planned_dosage": "两个单元、每单元三课时",
+      "actual_dosage": null,
+      "coverage": null,
+      "deviations": [],
+      "evidence_ids": []
+    }
+  ],
+  "cases": [
+    {
+      "id": "CASE-01",
+      "title": "区域认知任务教学案例",
+      "status": "designed",
+      "author_ids": [
+        "P01"
+      ],
+      "implementation": null,
+      "evidence_ids": []
+    }
+  ],
+  "sources": [],
+  "commitments": [
+    {
+      "id": "OUT-01",
+      "name": "最终研究报告",
+      "promised_in": "M01",
+      "due_date": "2028-06-01",
+      "status": "planned",
+      "material_ids": [
+        "M21"
+      ],
+      "change_approval_id": null
+    }
+  ],
+  "claims": [
+    {
+      "id": "CLM-01",
+      "text": "学生的主要学习困难将在真实调查后确定",
+      "status": "planned",
+      "evidence_ids": []
+    }
+  ],
+  "evaluation_weights": {
+    "区域定位": 20,
+    "证据提取": 25,
+    "综合分析": 25,
+    "问题解释": 20,
+    "反思改进": 10
+  }
+}

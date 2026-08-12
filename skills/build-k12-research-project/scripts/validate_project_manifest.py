@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 REQUIRED_PROJECT = ("title", "leader", "school", "subject", "stage")
@@ -40,6 +40,8 @@ INTERVENTION_STATUSES = {"planned", "piloted", "implemented", "completed"}
 COMMITMENT_STATUSES = {"planned", "in-progress", "fulfilled", "changed-approved", "not-fulfilled"}
 INSTRUMENT_STATUSES = {"draft", "piloted", "ready", "collected", "analyzed", "completed"}
 CLAIM_STATUSES = {"planned", "supported", "verified", "rejected", "completed"}
+SUBJECT_ROLES = {"main", "related"}
+SUBJECT_REVIEW_STATUSES = {"pending", "confirmed"}
 MATERIAL_ROLES = {
     "official-form", "application", "anonymous-form", "opening", "blank-instrument",
     "consent-form", "interview-guide", "observation-form", "assessment-tool", "codebook",
@@ -51,7 +53,12 @@ MATERIAL_ROLES = {
 }
 PACKAGE_SCOPES = {"application-kit", "implementation-kit", "full-lifecycle-kit", "closing-kit", "custom"}
 TRUTH_STATES = {"planning", "implementing", "closing", "completed"}
-DELIVERY_STATES = {"application-ready", "implementation-ready", "full-lifecycle-scaffold", "closing-ready"}
+DELIVERY_STATES = {
+    "application-scaffold", "application-ready",
+    "implementation-scaffold", "implementation-ready",
+    "full-lifecycle-scaffold",
+    "closing-scaffold", "closing-ready",
+}
 BATCH_MODES = {"single-snapshot", "incremental"}
 UNKNOWN_HANDLING = {"structured-pending", "block-generation"}
 TARGET_VERSIONS = {"working", "submission", "anonymous", "public"}
@@ -71,6 +78,11 @@ DATE_KEYS = (
 )
 
 
+def valid_sha256(value: object) -> bool:
+    digest = str(value or "")
+    return len(digest) == 64 and all(ch in "0123456789abcdefABCDEF" for ch in digest)
+
+
 def parse_day(value: str, label: str, errors: list[str]) -> date | None:
     if not value:
         return None
@@ -84,6 +96,9 @@ def parse_day(value: str, label: str, errors: list[str]) -> date | None:
 def validate(data: dict) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
+    schema_version = str(data.get("schema_version", "1.1"))
+    if schema_version not in {"1.1", "1.2"}:
+        errors.append(f"schema_version不受支持：{schema_version!r}")
     project = data.get("project")
     if not isinstance(project, dict):
         return ["缺少 project 对象"], warnings
@@ -120,6 +135,20 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
         errors.append("generation_contract.batch_mode 缺少有效值")
     if generation.get("unknown_handling") not in UNKNOWN_HANDLING:
         errors.append("generation_contract.unknown_handling 缺少有效值")
+    if schema_version == "1.2" or generation.get("batch_mode") == "incremental":
+        if not str(generation.get("snapshot_id", "")).strip():
+            errors.append("generation_contract.snapshot_id 不能为空")
+        generated_at = str(generation.get("generated_at", "")).strip()
+        if not generated_at:
+            errors.append("generation_contract.generated_at 不能为空")
+        else:
+            try:
+                datetime.fromisoformat(generated_at)
+            except ValueError:
+                errors.append("generation_contract.generated_at 必须是ISO 8601日期时间")
+        parent_snapshot_id = generation.get("parent_snapshot_id")
+        if generation.get("batch_mode") == "incremental" and not str(parent_snapshot_id or "").strip():
+            errors.append("增量批次必须登记generation_contract.parent_snapshot_id")
     target_versions = generation.get("target_versions")
     if not isinstance(target_versions, list) or not target_versions:
         errors.append("generation_contract.target_versions 必须是非空数组")
@@ -136,17 +165,23 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
     truth_state = generation.get("truth_state")
     package_scope = generation.get("package_scope")
     state_rules = {
+        "application-scaffold": {"planning"},
         "application-ready": {"planning"},
+        "implementation-scaffold": {"planning", "implementing"},
         "implementation-ready": {"implementing"},
         "full-lifecycle-scaffold": {"planning", "implementing"},
+        "closing-scaffold": {"closing", "completed"},
         "closing-ready": {"closing", "completed"},
     }
     if delivery_state in state_rules and truth_state not in state_rules[delivery_state]:
         errors.append(f"delivery_state为{delivery_state}时，truth_state必须属于{sorted(state_rules[delivery_state])}")
     scope_rules = {
+        "application-scaffold": {"application-kit", "custom"},
         "application-ready": {"application-kit", "custom"},
+        "implementation-scaffold": {"implementation-kit", "full-lifecycle-kit", "custom"},
         "implementation-ready": {"implementation-kit", "full-lifecycle-kit", "custom"},
         "full-lifecycle-scaffold": {"full-lifecycle-kit", "custom"},
+        "closing-scaffold": {"closing-kit", "full-lifecycle-kit", "custom"},
         "closing-ready": {"closing-kit", "full-lifecycle-kit", "custom"},
     }
     if delivery_state in scope_rules and package_scope not in scope_rules[delivery_state]:
@@ -172,6 +207,49 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
                 errors.append(f"contributors[{index}].{key} 不能为空")
         if not isinstance(item.get("is_approved_member"), bool):
             errors.append(f"contributors[{index}].is_approved_member 必须是布尔值")
+
+    subject_coverage = data.get("subject_coverage", [])
+    if schema_version == "1.2" and (not isinstance(subject_coverage, list) or not subject_coverage):
+        errors.append("subject_coverage 至少登记主学科的研究功能、课标范围和复核责任")
+        subject_coverage = []
+    elif not isinstance(subject_coverage, list):
+        errors.append("subject_coverage 必须是数组")
+        subject_coverage = []
+    covered_subjects: set[str] = set()
+    main_subjects: list[str] = []
+    for index, item in enumerate(subject_coverage, 1):
+        if not isinstance(item, dict):
+            errors.append(f"subject_coverage[{index}] 必须是对象")
+            continue
+        subject = str(item.get("subject", "")).strip()
+        if not subject:
+            errors.append(f"subject_coverage[{index}].subject 不能为空")
+        elif subject in covered_subjects:
+            errors.append(f"subject_coverage 存在重复学科：{subject}")
+        covered_subjects.add(subject)
+        role = item.get("role")
+        if role not in SUBJECT_ROLES:
+            errors.append(f"subject_coverage[{index}].role 必须是main或related")
+        if role == "main":
+            main_subjects.append(subject)
+        for key in ("research_function", "standards_reference"):
+            if not str(item.get(key, "")).strip():
+                errors.append(f"subject_coverage[{index}].{key} 不能为空")
+        review_status = item.get("review_status")
+        if review_status not in SUBJECT_REVIEW_STATUSES:
+            errors.append(f"subject_coverage[{index}].review_status 必须是pending或confirmed")
+        if review_status == "confirmed" and not str(item.get("reviewer", "")).strip():
+            errors.append(f"subject_coverage[{index}] 已确认复核但缺少reviewer")
+    if subject_coverage:
+        expected_subjects = {str(project.get("subject", "")).strip()} | {
+            str(value).strip() for value in related_subjects if str(value).strip()
+        }
+        if covered_subjects != expected_subjects:
+            errors.append(
+                f"subject_coverage学科集合{sorted(covered_subjects)}与主/关联学科{sorted(expected_subjects)}不一致"
+            )
+        if main_subjects != [str(project.get("subject", "")).strip()]:
+            errors.append("subject_coverage必须且只能把project.subject标记为main")
 
     timeline = data.get("timeline", {})
     if not isinstance(timeline, dict):
@@ -307,6 +385,8 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
                 errors.append(f"证据 {eid or index} 已采集/核验，delivery_included必须是布尔值")
             elif delivery_included and not item.get("source_file"):
                 errors.append(f"证据 {eid or index} 声明随包交付，但缺少 source_file")
+            elif delivery_included and item.get("type") != "photo" and not valid_sha256(item.get("source_sha256")):
+                errors.append(f"证据 {eid or index} 声明随包交付，但缺少有效source_sha256")
             elif delivery_included is False:
                 custody = item.get("custody_record")
                 if not isinstance(custody, dict):
@@ -342,7 +422,7 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
                     errors.append(f"照片 {eid or index} 必须包含数组 transformation_log；未处理时使用空数组")
                 for digest_key in ("original_sha256", "derivative_sha256"):
                     digest = str(item.get(digest_key, ""))
-                    if digest and (len(digest) != 64 or any(ch not in "0123456789abcdefABCDEF" for ch in digest)):
+                    if digest and not valid_sha256(digest):
                         errors.append(f"照片 {eid or index}.{digest_key} 必须是64位SHA-256十六进制值")
             if item.get("publication_scope") in {"anonymous", "public"} and item.get("status") in {"collected", "verified", "completed"}:
                 if consent_status not in {"obtained", "not-required"}:
@@ -517,14 +597,24 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
             errors.append(f"材料 {item.get('id', index)} 缺少有效 material_role")
         if item.get("status") not in MATERIAL_STATUSES:
             errors.append(f"材料 {item.get('id', index)} 缺少有效 status")
+        if "included_in_batch" in item and not isinstance(item.get("included_in_batch"), bool):
+            errors.append(f"材料 {item.get('id', index)}.included_in_batch 必须是布尔值")
         output_format = str(item.get("output_format", "")).lower()
         if output_format not in {"doc", "docx", "xlsx", "pdf"}:
             errors.append(f"材料 {item.get('id', index)} 缺少有效 output_format")
         format_profile = item.get("format_profile")
         if format_profile not in FORMAT_PROFILES:
             errors.append(f"材料 {item.get('id', index)} 缺少有效 format_profile")
-        if format_profile == "official-exact" and not item.get("reference_template"):
+        if (
+            format_profile == "official-exact"
+            and item.get("included_in_batch") is not False
+            and not item.get("reference_template")
+        ):
             warnings.append(f"材料 {item.get('id', index)} 使用official-exact，但尚未登记reference_template")
+        if "allow_added_drawings" in item and not isinstance(item.get("allow_added_drawings"), bool):
+            errors.append(f"材料 {item.get('id', index)}.allow_added_drawings 必须是布尔值")
+        if item.get("allow_added_drawings") is True and format_profile != "official-exact":
+            warnings.append(f"材料 {item.get('id', index)} 非official-exact却登记allow_added_drawings，无需此字段")
         if output_format == "xlsx" and format_profile != "spreadsheet-workbook":
             errors.append(f"XLSX材料 {item.get('id', index)} 应使用spreadsheet-workbook格式")
         required_sheets = item.get("required_sheets", [])
@@ -561,7 +651,7 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
             if not item.get("file_path") or not item.get("sha256"):
                 errors.append(f"材料 {item.get('id', index)} 已就绪/提交，但缺少 file_path 或 sha256")
             digest = str(item.get("sha256", ""))
-            if digest and (len(digest) != 64 or any(ch not in "0123456789abcdefABCDEF" for ch in digest)):
+            if digest and not valid_sha256(digest):
                 errors.append(f"材料 {item.get('id', index)}.sha256 必须是64位SHA-256")
             failed_qa = [key for key, value in qa.items() if value not in {"passed", "not-applicable"}]
             if failed_qa:
@@ -590,12 +680,54 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
         source_id = item.get("reference_source_id")
         if source_id and source_id not in source_ids:
             errors.append(f"材料 {item.get('id', index)} 引用了不存在的来源：{source_id}")
-        for dependency in item.get("depends_on", []):
+        dependencies = item.get("depends_on", [])
+        if not isinstance(dependencies, list):
+            errors.append(f"材料 {item.get('id', index)}.depends_on 必须是数组")
+            dependencies = []
+        for dependency in dependencies:
             if dependency not in material_ids:
                 errors.append(f"材料 {item.get('id', index)} 引用了不存在的依赖：{dependency}")
-        for photo_id in item.get("photo_evidence_ids", []):
+        photo_evidence_ids = item.get("photo_evidence_ids", [])
+        if not isinstance(photo_evidence_ids, list):
+            errors.append(f"材料 {item.get('id', index)}.photo_evidence_ids 必须是数组")
+            photo_evidence_ids = []
+        for photo_id in photo_evidence_ids:
             if photo_id not in photo_ids:
                 errors.append(f"材料 {item.get('id', index)} 引用了不存在的照片证据：{photo_id}")
+
+    dependency_map = {
+        str(item.get("id")): [str(value) for value in item.get("depends_on", [])]
+        for item in materials
+        if isinstance(item, dict) and item.get("id") and isinstance(item.get("depends_on", []), list)
+    }
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(material_id: str, trail: list[str]) -> None:
+        if material_id in visiting:
+            cycle_start = trail.index(material_id) if material_id in trail else 0
+            errors.append("材料依赖存在循环：" + " -> ".join(trail[cycle_start:] + [material_id]))
+            return
+        if material_id in visited:
+            return
+        visiting.add(material_id)
+        for dependency in dependency_map.get(material_id, []):
+            if dependency in dependency_map:
+                visit(dependency, trail + [material_id])
+        visiting.remove(material_id)
+        visited.add(material_id)
+
+    for material_id in dependency_map:
+        visit(material_id, [])
+
+    for source_id, source in source_items.items():
+        used_in = source.get("used_in", [])
+        if not isinstance(used_in, list):
+            errors.append(f"来源 {source_id}.used_in 必须是数组")
+            continue
+        for material_id in used_in:
+            if material_id not in material_ids:
+                errors.append(f"来源 {source_id}.used_in 引用了不存在的材料：{material_id}")
 
     for photo_id in photo_ids:
         for material_id in evidence_items[photo_id].get("material_ids", []):
@@ -657,6 +789,15 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
         for evidence_id in claim_evidence:
             if evidence_id not in evidence_ids:
                 errors.append(f"claims[{index}] 引用了不存在的证据：{evidence_id}")
+
+    for photo_id in photo_ids:
+        claim_references = evidence_items[photo_id].get("claim_ids", [])
+        if not isinstance(claim_references, list):
+            errors.append(f"照片 {photo_id}.claim_ids 必须是数组")
+            continue
+        for claim_id in claim_references:
+            if claim_id not in claim_ids:
+                errors.append(f"照片 {photo_id} 引用了不存在的结论：{claim_id}")
 
     weights = data.get("evaluation_weights", {})
     if weights:
