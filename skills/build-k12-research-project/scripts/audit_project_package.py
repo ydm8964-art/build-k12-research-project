@@ -224,12 +224,11 @@ def audit(manifest_path: Path, root: Path, final: bool) -> tuple[list[str], list
         required = bool(item.get("required_for_submission"))
         if final and required and status not in READY_STATUSES:
             errors.append(f"必交材料{material_id}状态不是ready/submitted/archived：{status}")
-        if status not in READY_STATUSES:
-            continue
 
         file_path = item.get("file_path")
         if not file_path:
-            errors.append(f"已就绪材料{material_id}缺少file_path")
+            if status in READY_STATUSES:
+                errors.append(f"已就绪材料{material_id}缺少file_path")
             continue
         actual, inside = resolve_material_path(root, str(file_path))
         actual_paths[material_id] = actual
@@ -250,9 +249,12 @@ def audit(manifest_path: Path, root: Path, final: bool) -> tuple[list[str], list
             errors.append(f"材料{material_id}扩展名{actual.suffix}与output_format={output_format}不一致")
 
         digest = sha256(actual)
-        hash_to_ids[digest].append(material_id)
-        if str(item.get("sha256", "")).lower() != digest:
+        if status in READY_STATUSES:
+            hash_to_ids[digest].append(material_id)
+        if item.get("sha256") and str(item.get("sha256", "")).lower() != digest:
             errors.append(f"材料{material_id}实际SHA-256与manifest不一致")
+        if status not in READY_STATUSES:
+            continue
         max_size = item.get("max_size_mb")
         if isinstance(max_size, (int, float)) and actual.stat().st_size > max_size * 1024 * 1024:
             errors.append(f"材料{material_id}超过登记的{max_size}MB大小限制")
@@ -303,6 +305,7 @@ def audit(manifest_path: Path, root: Path, final: bool) -> tuple[list[str], list
                 if material_by_id.get(str(material_id), {}).get("status") not in READY_STATUSES:
                     errors.append(f"承诺成果{commitment_id}引用的材料{material_id}尚未就绪")
 
+    evidence_paths: set[Path] = set()
     for item in data.get("evidence", []):
         if not isinstance(item, dict) or item.get("status") not in {"collected", "verified", "completed"}:
             continue
@@ -311,12 +314,15 @@ def audit(manifest_path: Path, root: Path, final: bool) -> tuple[list[str], list
         source_file = item.get("source_file")
         if delivery_included is True and source_file:
             actual, inside = resolve_material_path(root, str(Path(str(source_file)).expanduser()))
+            evidence_paths.add(actual)
             if final and not inside:
                 errors.append(f"证据{evidence_id}声明随包交付，但source_file不在交付根目录内：{actual}")
             if not actual.exists():
                 errors.append(f"证据{evidence_id}登记的source_file不存在：{actual}")
-            elif item.get("type") == "photo" and str(item.get("original_sha256", "")).lower() != sha256(actual):
-                errors.append(f"照片证据{evidence_id}原件SHA-256与登记值不一致")
+            elif actual.is_file():
+                digest_key = "original_sha256" if item.get("type") == "photo" else "source_sha256"
+                if str(item.get(digest_key, "")).lower() != sha256(actual):
+                    errors.append(f"证据{evidence_id}的{digest_key}与实际文件不一致")
         elif delivery_included is True:
             errors.append(f"证据{evidence_id}声明随包交付，但缺少source_file")
         elif delivery_included is False:
@@ -329,6 +335,7 @@ def audit(manifest_path: Path, root: Path, final: bool) -> tuple[list[str], list
                 errors.append(f"照片证据{evidence_id}缺少交付派生副本derivative_file")
             else:
                 derivative, inside = resolve_material_path(root, str(Path(str(derivative_file)).expanduser()))
+                evidence_paths.add(derivative)
                 if final and not inside:
                     errors.append(f"照片证据{evidence_id}的派生副本不在交付根目录内：{derivative}")
                 if not derivative.is_file():
@@ -336,7 +343,9 @@ def audit(manifest_path: Path, root: Path, final: bool) -> tuple[list[str], list
                 elif str(item.get("derivative_sha256", "")).lower() != sha256(derivative):
                     errors.append(f"照片证据{evidence_id}派生副本SHA-256与登记值不一致")
 
-    registered = {path.resolve() for path in actual_paths.values() if path.exists()}
+    registered = {path.resolve() for path in actual_paths.values() if path.exists()} | {
+        path.resolve() for path in evidence_paths if path.exists()
+    }
     try:
         manifest_resolved = manifest_path.resolve()
         for path in root.rglob("*"):

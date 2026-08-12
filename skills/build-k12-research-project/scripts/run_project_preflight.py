@@ -14,7 +14,6 @@ from audit_content_integrity import audit as audit_content
 from audit_docx_format import audit as audit_docx_format
 from audit_lifecycle_coverage import audit as audit_lifecycle
 from audit_photo_evidence import audit as audit_photo
-from audit_project_package import READY_STATUSES
 from audit_project_package import audit as audit_package
 from audit_xlsx_structure import audit as audit_xlsx
 
@@ -64,7 +63,7 @@ def run(manifest_path: Path, root: Path, final: bool) -> dict:
         forbidden = []
 
     for item in data.get("materials", []):
-        if not isinstance(item, dict) or item.get("status") not in READY_STATUSES:
+        if not isinstance(item, dict) or not item.get("file_path"):
             continue
         material_id = str(item.get("id", "未编号"))
         path = resolve_path(root, item.get("file_path"))
@@ -106,7 +105,13 @@ def run(manifest_path: Path, root: Path, final: bool) -> dict:
             errors, warnings = [f"official-exact参考模板不存在：{reference or '未登记'}"], []
         else:
             try:
-                errors, warnings = audit_docx_format(path, profile, reference, final)
+                errors, warnings = audit_docx_format(
+                    path,
+                    profile,
+                    reference,
+                    final,
+                    bool(item.get("allow_added_drawings")),
+                )
             except Exception as exc:
                 errors, warnings = [f"审计执行失败：{exc}"], []
         add_result(checks, "docx-format", str(path), errors, warnings, material_id)
@@ -130,7 +135,7 @@ def run(manifest_path: Path, root: Path, final: bool) -> dict:
     warning_count = sum(len(item["warnings"]) for item in checks)
     strict_failure = bool(error_count or (final and warning_count))
     return {
-        "schema_version": "1.1",
+        "schema_version": "1.2",
         "run_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "manifest": str(manifest_path),
         "root": str(root),

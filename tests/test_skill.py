@@ -26,6 +26,9 @@ import audit_docx_format  # noqa: E402
 import audit_lifecycle_coverage  # noqa: E402
 import audit_project_package  # noqa: E402
 import generate_attention_items  # noqa: E402
+import initialize_project_package  # noqa: E402
+import plan_incremental_refresh  # noqa: E402
+import register_material_file  # noqa: E402
 import run_project_preflight  # noqa: E402
 import validate_project_manifest  # noqa: E402
 
@@ -213,7 +216,148 @@ class SkillTests(unittest.TestCase):
                 final = run_project_preflight.run(manifest, root, final=True)
             self.assertEqual(working["status"], "passed")
             self.assertEqual(final["status"], "failed")
-            self.assertEqual(final["schema_version"], "1.1")
+            self.assertEqual(final["schema_version"], "1.2")
+
+    def test_initializer_creates_full_lifecycle_scaffold(self) -> None:
+        intake_path = SKILL / "references" / "project-intake.example.json"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "示例材料包"
+            manifest_path = initialize_project_package.initialize(intake_path, root, SKILL)
+            data = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(data["schema_version"], "1.2")
+            self.assertEqual(len(data["materials"]), 26)
+            self.assertTrue(all(item["included_in_batch"] for item in data["materials"]))
+            self.assertEqual(data["materials"][0]["status"], "draft")
+            self.assertTrue((root / "00_课题材料包注意事项_真实性与待办清单_v0.1.docx").is_file())
+            self.assertTrue((root / "M25_整套材料目录与交付索引_v0.1.docx").is_file())
+            self.assertTrue((root / "05原始数据" / "M09_课题研究数据工作簿_v0.1.xlsx").is_file())
+            errors, _ = validate_project_manifest.validate(data)
+            self.assertEqual(errors, [])
+            errors, warnings = audit_lifecycle_coverage.audit(data, final=False)
+            self.assertEqual(errors, [])
+            self.assertFalse(any("缺少生命周期组" in value for value in warnings), warnings)
+
+    def test_excluded_official_forms_do_not_create_scope_warnings(self) -> None:
+        intake = json.loads((SKILL / "references" / "project-intake.example.json").read_text(encoding="utf-8"))
+        intake["generation_contract"].update({"package_scope": "implementation-kit", "truth_state": "implementing"})
+        manifest = initialize_project_package.build_manifest(intake)
+        _, warnings = validate_project_manifest.validate(manifest)
+        warning_text = "\n".join(warnings)
+        self.assertNotIn("材料 M01", warning_text)
+        self.assertNotIn("材料 M02", warning_text)
+        self.assertNotIn("材料 M22", warning_text)
+        self.assertIn("材料 M03", warning_text)
+
+    def test_subject_coverage_matches_main_and_related_subjects(self) -> None:
+        intake = json.loads((SKILL / "references" / "project-intake.example.json").read_text(encoding="utf-8"))
+        intake["project"]["related_subjects"] = ["信息科技"]
+        with self.assertRaisesRegex(ValueError, "subject_coverage学科集合"):
+            initialize_project_package.build_manifest(intake)
+
+        intake["subject_coverage"].append(
+            {
+                "subject": "信息科技",
+                "role": "related",
+                "research_function": "提供数字地图工具和电子作品载体",
+                "standards_reference": "义务教育信息科技课程标准相应内容要求",
+                "reviewer": "示例教师乙",
+                "review_status": "confirmed",
+            }
+        )
+        manifest = initialize_project_package.build_manifest(intake)
+        errors, _ = validate_project_manifest.validate(manifest)
+        self.assertEqual(errors, [])
+
+    def test_major_k12_subject_domains_have_specific_profiles(self) -> None:
+        subjects = (
+            "语文", "数学", "英语", "物理", "化学", "生物", "小学科学", "道德与法治", "历史", "地理",
+            "体育与健康", "音乐", "美术", "信息科技", "劳动", "综合实践", "心理健康", "幼小衔接",
+            "特殊教育", "学校管理",
+        )
+        generic = generate_attention_items.GENERIC_SUBJECT_PROFILE
+        self.assertEqual([value for value in subjects if generate_attention_items.profile_for_subject(value) is generic], [])
+
+    def test_material_dependency_cycles_are_rejected(self) -> None:
+        data = copy.deepcopy(self.example)
+        data["materials"][0]["depends_on"] = ["M01"]
+        data["materials"][1]["depends_on"] = ["M00"]
+        errors, _ = validate_project_manifest.validate(data)
+        self.assertTrue(any("材料依赖存在循环" in value for value in errors), errors)
+
+    def test_draft_files_are_audited_by_preflight(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            draft = root / "draft.docx"
+            draft.write_bytes((SKILL / "assets" / "templates" / "research-form.docx").read_bytes())
+            data = copy.deepcopy(self.example)
+            data["materials"][0].update(
+                {
+                    "status": "draft",
+                    "file_path": draft.name,
+                    "sha256": audit_project_package.sha256(draft),
+                }
+            )
+            manifest = root / "project-manifest.json"
+            manifest.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            with mock.patch.object(run_project_preflight, "audit_content", return_value=([], [])) as content_audit:
+                run_project_preflight.run(manifest, root, final=False)
+            content_audit.assert_called_once()
+
+    def test_incremental_refresh_propagates_subject_change(self) -> None:
+        old = copy.deepcopy(self.example)
+        old["generation_contract"].update({"snapshot_id": "snap-1", "generated_at": "2026-08-12T00:00:00+08:00"})
+        new = copy.deepcopy(old)
+        new["generation_contract"].update(
+            {"batch_mode": "incremental", "snapshot_id": "snap-2", "parent_snapshot_id": "snap-1"}
+        )
+        new["subject_coverage"] = [
+            {
+                "subject": "地理",
+                "role": "main",
+                "research_function": "区域认知",
+                "standards_reference": "课程标准",
+                "reviewer": "示例教师",
+                "review_status": "confirmed",
+            }
+        ]
+        report = plan_incremental_refresh.compare(old, new)
+        self.assertEqual(report["errors"], [])
+        roles = {item["material_role"] for item in report["affected_materials"]}
+        self.assertIn("analysis-report", roles)
+        self.assertIn("attention-items", roles)
+
+    def test_ready_registration_requires_real_qa_report(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            data = copy.deepcopy(self.example)
+            material = root / "attention.docx"
+            material.write_bytes((SKILL / "assets" / "templates" / "attention-items.docx").read_bytes())
+            manifest = root / "project-manifest.json"
+            manifest.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "必须提供--qa-report"):
+                register_material_file.register(manifest, "M00", material, "ready", None, None)
+
+    def test_included_evidence_files_are_registered_and_hashed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            evidence_file = root / "evidence" / "raw.json"
+            evidence_file.parent.mkdir()
+            evidence_file.write_text("{}", encoding="utf-8")
+            data = copy.deepcopy(self.example)
+            data["evidence"][0].update(
+                {
+                    "status": "collected",
+                    "delivery_included": True,
+                    "source_file": "evidence/raw.json",
+                    "source_sha256": audit_project_package.sha256(evidence_file),
+                    "collected_date": "2026-08-12",
+                }
+            )
+            manifest = root / "project-manifest.json"
+            manifest.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            errors, warnings = audit_project_package.audit(manifest, root, final=False)
+            self.assertEqual(errors, [])
+            self.assertFalse(any("未登记材料" in value and "raw.json" in value for value in warnings), warnings)
 
     def test_docx_templates_are_valid_and_structurally_audited(self) -> None:
         profiles = {
@@ -253,6 +397,25 @@ class SkillTests(unittest.TestCase):
             document.save(changed)
             errors, _ = audit_docx_format.audit(changed, "official-exact", reference, False)
             self.assertTrue(any("列宽网格" in value for value in errors), errors)
+
+    def test_official_exact_can_allow_only_added_drawings(self) -> None:
+        from docx import Document
+        from docx.shared import Inches
+        from PIL import Image
+
+        reference = SKILL / "assets" / "templates" / "research-form.docx"
+        with tempfile.TemporaryDirectory() as directory:
+            directory_path = Path(directory)
+            image_path = directory_path / "signature.png"
+            Image.new("RGB", (20, 20), "white").save(image_path)
+            changed = directory_path / "changed.docx"
+            document = Document(reference)
+            document.paragraphs[0].add_run().add_picture(str(image_path), width=Inches(0.1))
+            document.save(changed)
+            errors, _ = audit_docx_format.audit(changed, "official-exact", reference, False)
+            self.assertTrue(any("绘图或图片数量" in value for value in errors), errors)
+            errors, _ = audit_docx_format.audit(changed, "official-exact", reference, False, True)
+            self.assertFalse(any("绘图或图片" in value for value in errors), errors)
 
     def test_xlsx_template_has_required_sheets_and_clean_formulas(self) -> None:
         source = SKILL / "assets" / "templates" / "project-data-workbook.xlsx"

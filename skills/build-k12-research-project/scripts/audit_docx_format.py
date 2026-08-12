@@ -127,7 +127,13 @@ def all_text(document: Document) -> str:
     return "\n".join(parts)
 
 
-def audit(path: Path, profile: str, reference: Path | None, final: bool) -> tuple[list[str], list[str]]:
+def audit(
+    path: Path,
+    profile: str,
+    reference: Path | None,
+    final: bool,
+    allow_added_drawings: bool = False,
+) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
     if profile not in VALID_PROFILES:
@@ -160,8 +166,15 @@ def audit(path: Path, profile: str, reference: Path | None, final: bool) -> tupl
                     errors.append(f"第{index}个表格的列宽网格或合并单元格结构与官方模板不一致")
             if body_block_signature(document) != body_block_signature(source):
                 errors.append("正文段落/表格/分节的块级顺序与官方模板不一致")
-            if document_feature_signature(document) != document_feature_signature(source):
-                errors.append("内容控件、域、绘图或图片数量与官方模板不一致")
+            actual_features = document_feature_signature(document)
+            source_features = document_feature_signature(source)
+            if actual_features[:3] != source_features[:3]:
+                errors.append("内容控件或域数量与官方模板不一致")
+            if allow_added_drawings:
+                if actual_features[3] < source_features[3]:
+                    errors.append("官方模板原有绘图或图片被删除")
+            elif actual_features[3] != source_features[3]:
+                errors.append("绘图或图片数量与官方模板不一致；真实签章/照片确需新增时登记allow_added_drawings")
     else:
         for index, section in enumerate(document.sections, 1):
             width, height = section.page_width.mm, section.page_height.mm
@@ -245,10 +258,11 @@ def main() -> int:
     parser.add_argument("docx", type=Path)
     parser.add_argument("--profile", required=True, choices=sorted(VALID_PROFILES))
     parser.add_argument("--reference", type=Path)
+    parser.add_argument("--allow-added-drawings", action="store_true", help="允许在保留官方原图的前提下新增真实签章/照片")
     parser.add_argument("--final", action="store_true")
     args = parser.parse_args()
     try:
-        errors, warnings = audit(args.docx, args.profile, args.reference, args.final)
+        errors, warnings = audit(args.docx, args.profile, args.reference, args.final, args.allow_added_drawings)
     except Exception as exc:  # keep CLI failure legible for production use
         print(f"读取或审计失败：{exc}", file=sys.stderr)
         return 2

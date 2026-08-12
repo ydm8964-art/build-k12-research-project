@@ -8,6 +8,8 @@
 
 没有当年官方电子表格时，优先复制`assets/templates/project-data-workbook.xlsx`。如需重建，先通过Codex工作区依赖加载器取得Node和`node_modules`路径，在可写临时目录同时放置`build_generic_xlsx_template.mjs`与`normalize_xlsx_views.py`并建立`node_modules`符号链接，再运行`node build_generic_xlsx_template.mjs 输出路径.xlsx`；主脚本使用公开包入口`@oai/artifact-tool`，兼容脚本只补足导出器未物化的标准冻结窗格，不猜测运行时内部文件路径。该文件是通用研究数据底稿，不是官方申报附件；实际字段、量表和报送列仍按项目主清单与当年要求调整。
 
+项目主清单已经建立时，使用`populate_project_workbook.mjs --input 母版.xlsx --output 项目工作簿.xlsx --manifest project-manifest.json --qa-dir 逐表预览`自动写入项目说明、证据索引、照片登记和材料进度。脚本只同步登记事实，不制造问卷回收、测评分数或分析结果；输出后继续执行结构审计并人工查看9张预览图。
+
 根据研究方法选用，不需要的工作表可以不建：
 
 | 工作表 | 用途 | 关键字段/要求 |
