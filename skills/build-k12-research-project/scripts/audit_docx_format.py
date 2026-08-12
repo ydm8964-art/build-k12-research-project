@@ -4,10 +4,10 @@
 from __future__ import annotations
 
 import argparse
-import re
 import sys
 from pathlib import Path
 
+from audit_common import PLACEHOLDER_RE, cli_failed
 from docx import Document
 from docx.oxml.ns import qn
 
@@ -15,7 +15,7 @@ A4_WIDTH_MM = 210.0
 A4_HEIGHT_MM = 297.0
 TOLERANCE_MM = 1.0
 TABLE_PROFILES = {"lesson-table", "casebook", "attention-items"}
-REPEAT_HEADER_PROFILES = {"research-form", "analysis-report", "casebook", "attention-items"}
+REPEAT_HEADER_PROFILES = {"research-form", "analysis-report", "casebook", "evidence-sheet", "attention-items"}
 VALID_PROFILES = {
     "official-exact",
     "research-form",
@@ -56,6 +56,43 @@ def table_width_dxa(table) -> int | None:
         return int(node.get(qn("w:w")))
     except (TypeError, ValueError):
         return None
+
+
+def integer_attr(node, name: str) -> int | None:
+    if node is None:
+        return None
+    try:
+        return int(node.get(qn(name)))
+    except (TypeError, ValueError):
+        return None
+
+
+def body_block_signature(document: Document) -> tuple[str, ...]:
+    return tuple(child.tag.rsplit("}", 1)[-1] for child in document.element.body.iterchildren())
+
+
+def document_feature_signature(document: Document) -> tuple[int, int, int, int]:
+    root = document.element
+    return (
+        len(root.xpath(".//w:sdt")),
+        len(root.xpath(".//w:fldSimple")),
+        len(root.xpath(".//w:instrText")),
+        len(root.xpath(".//w:drawing|.//w:pict")),
+    )
+
+
+def table_structure_signature(table) -> tuple:
+    grid = tuple(integer_attr(col, "w:w") for col in table._tbl.tblGrid.findall(qn("w:gridCol")))
+    cells: list[tuple[int, str, int | None]] = []
+    for row_index, row in enumerate(table._tbl.findall(qn("w:tr")), 1):
+        for cell in row.findall(qn("w:tc")):
+            props = cell.find(qn("w:tcPr"))
+            span_node = props.find(qn("w:gridSpan")) if props is not None else None
+            merge_node = props.find(qn("w:vMerge")) if props is not None else None
+            span = integer_attr(span_node, "w:val") or 1
+            merge = merge_node.get(qn("w:val"), "continue") if merge_node is not None else ""
+            cells.append((row_index, merge, span))
+    return grid, tuple(cells)
 
 
 def has_repeat_header(table) -> bool:
@@ -119,6 +156,12 @@ def audit(path: Path, profile: str, reference: Path | None, final: bool) -> tupl
                 expected_shape = (len(expected.rows), len(expected.columns))
                 if actual_shape != expected_shape:
                     errors.append(f"第{index}个表格形状与模板不一致：{actual_shape} != {expected_shape}")
+                if table_structure_signature(actual) != table_structure_signature(expected):
+                    errors.append(f"第{index}个表格的列宽网格或合并单元格结构与官方模板不一致")
+            if body_block_signature(document) != body_block_signature(source):
+                errors.append("正文段落/表格/分节的块级顺序与官方模板不一致")
+            if document_feature_signature(document) != document_feature_signature(source):
+                errors.append("内容控件、域、绘图或图片数量与官方模板不一致")
     else:
         for index, section in enumerate(document.sections, 1):
             width, height = section.page_width.mm, section.page_height.mm
@@ -147,6 +190,32 @@ def audit(path: Path, profile: str, reference: Path | None, final: bool) -> tupl
         grid = table._tbl.tblGrid.findall(qn("w:gridCol"))
         if not grid or any(not col.get(qn("w:w")) for col in grid):
             warnings.append(f"第{index}个表格缺少完整列宽网格")
+            grid_widths: list[int] = []
+        else:
+            grid_widths = [int(col.get(qn("w:w"))) for col in grid]
+            if width and abs(sum(grid_widths) - width) > 10:
+                warnings.append(f"第{index}个表格tblGrid合计与tblW不一致")
+        indent = table._tbl.tblPr.find(qn("w:tblInd"))
+        if integer_attr(indent, "w:w") is None or indent.get(qn("w:type")) != "dxa":
+            warnings.append(f"第{index}个表格未设置明确DXA缩进tblInd")
+        layout = table._tbl.tblPr.find(qn("w:tblLayout"))
+        if layout is None or layout.get(qn("w:type")) != "fixed":
+            warnings.append(f"第{index}个表格未使用fixed布局，跨软件列宽可能漂移")
+        if grid_widths:
+            for row_number, row in enumerate(table._tbl.findall(qn("w:tr")), 1):
+                grid_index = 0
+                for cell_number, cell in enumerate(row.findall(qn("w:tc")), 1):
+                    props = cell.find(qn("w:tcPr"))
+                    span_node = props.find(qn("w:gridSpan")) if props is not None else None
+                    span = integer_attr(span_node, "w:val") or 1
+                    cell_width_node = props.find(qn("w:tcW")) if props is not None else None
+                    cell_width = integer_attr(cell_width_node, "w:w")
+                    expected_width = sum(grid_widths[grid_index : grid_index + span])
+                    if cell_width is None or cell_width_node.get(qn("w:type")) != "dxa":
+                        warnings.append(f"第{index}个表格第{row_number}行第{cell_number}格缺少明确DXA tcW")
+                    elif expected_width and abs(cell_width - expected_width) > 10:
+                        warnings.append(f"第{index}个表格第{row_number}行第{cell_number}格tcW与跨列网格不一致")
+                    grid_index += span
         if len(table.rows) > 2 and profile in REPEAT_HEADER_PROFILES and not has_repeat_header(table):
             warnings.append(f"第{index}个多行表格未设置重复表头")
         if not has_cell_margins(table):
@@ -159,13 +228,9 @@ def audit(path: Path, profile: str, reference: Path | None, final: bool) -> tupl
     if profile == "casebook" and "目录" not in text:
         errors.append("案例集缺少目录")
     if final:
-        for pattern, label in (
-            (r"待填写|待补充|待确认|XXX+", "待处理占位词"),
-            (r"_{4,}", "连续下划线占位"),
-        ):
-            count = len(re.findall(pattern, text, flags=re.IGNORECASE))
-            if count:
-                warnings.append(f"发现{label}{count}处；核对是否属于保留签章/填写区")
+        count = len(PLACEHOLDER_RE.findall(text))
+        if count:
+            warnings.append(f"发现结构化占位内容{count}处；仅官方保留的签章/线下填写区可以存在")
 
     for paragraph in document.paragraphs:
         for run in paragraph.runs:
@@ -191,7 +256,7 @@ def main() -> int:
         print(f"警告：{item}")
     for item in errors:
         print(f"错误：{item}")
-    if errors:
+    if cli_failed(errors, warnings, args.final):
         print(f"格式结构审计未通过：{len(errors)}个错误，{len(warnings)}个警告")
         return 1
     print(f"格式结构审计通过：0个错误，{len(warnings)}个警告")

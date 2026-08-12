@@ -7,6 +7,8 @@ import argparse
 import json
 from pathlib import Path
 
+from audit_common import cli_failed
+
 READY_STATUSES = {"ready", "submitted", "archived"}
 GROUPS = {
     "attention-file": {"attention-items"},
@@ -120,7 +122,7 @@ def main() -> int:
         print(f"警告：{item}")
     for item in errors:
         print(f"错误：{item}")
-    if errors:
+    if cli_failed(errors, warnings, args.final):
         print(f"生命周期覆盖审计未通过：{len(errors)}个错误，{len(warnings)}个警告")
         return 1
     print(f"生命周期覆盖审计通过：0个错误，{len(warnings)}个警告")

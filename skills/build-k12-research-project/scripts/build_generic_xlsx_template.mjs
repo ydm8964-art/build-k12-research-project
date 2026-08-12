@@ -3,36 +3,9 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
-
-
-async function loadArtifactTool() {
-  try {
-    return await import("@oai/artifact-tool");
-  } catch (firstError) {
-    const bundled = path.resolve(
-      path.dirname(process.execPath),
-      "..",
-      "node_modules",
-      "@oai",
-      "artifact-tool",
-      "dist",
-      "artifact_tool.mjs",
-    );
-    try {
-      await fs.access(bundled);
-      return await import(pathToFileURL(bundled).href);
-    } catch {
-      throw new Error(
-        "缺少@oai/artifact-tool。请使用Codex工作区依赖中的Node运行本脚本，或在当前Node环境安装该包。",
-        { cause: firstError },
-      );
-    }
-  }
-}
-
-
-const { SpreadsheetFile, Workbook } = await loadArtifactTool();
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { SpreadsheetFile, Workbook } from "@oai/artifact-tool";
 
 
 const args = process.argv.slice(2);
@@ -217,27 +190,31 @@ addTable(charts, "FigureRegister", "J");
 const evidence = createSheet(
   "证据索引",
   "证据索引",
-  "每条结论链接到真实原件；文件路径优先使用材料包内相对路径。",
-  ["证据ID", "类型", "真实日期", "相对文件路径", "SHA-256", "对应问题", "对应材料", "对应结论", "隐私等级", "授权/核验状态", "责任人"],
-  [18, 18, 16, 36, 68, 22, 22, 30, 16, 20, 16],
+  "每条结论链接到真实原件；敏感原件可受控留存，不得为了交付而复制到普通材料包。",
+  ["证据ID", "类型", "真实日期", "是否随包", "交付相对路径", "SHA-256", "保管责任人", "受控定位", "保管核验日期", "对应问题", "对应材料", "对应结论", "隐私等级", "授权/核验状态", "责任人"],
+  [18, 18, 16, 14, 36, 68, 18, 30, 16, 22, 22, 30, 16, 20, 16],
 );
 evidence.getRange("B4:B33").dataValidation = { rule: { type: "list", values: ["原始数据", "访谈", "观察", "测评", "学生作品", "照片", "文件", "审批", "传播证明"] } };
 evidence.getRange("C4:C33").format.numberFormat = "yyyy-mm-dd";
-evidence.getRange("I4:I33").dataValidation = { rule: { type: "list", values: ["机密", "内部", "报送", "匿名", "公开"] } };
-evidence.getRange("J4:J33").dataValidation = { rule: { type: "list", values: ["计划", "待授权", "已采集", "已核验", "限制使用"] } };
-addTable(evidence, "EvidenceIndex", "K");
+evidence.getRange("D4:D33").dataValidation = { rule: { type: "list", values: ["是", "否"] } };
+evidence.getRange("I4:I33").format.numberFormat = "yyyy-mm-dd";
+evidence.getRange("M4:M33").dataValidation = { rule: { type: "list", values: ["机密", "内部", "报送", "匿名", "公开"] } };
+evidence.getRange("N4:N33").dataValidation = { rule: { type: "list", values: ["计划", "待授权", "已采集", "已核验", "限制使用"] } };
+addTable(evidence, "EvidenceIndex", "O");
 
 const photos = createSheet(
   "照片登记",
   "真实照片证据登记",
-  "只登记教师/学校真实提供的照片；不得用AI或网络图片冒充研究过程。原件与派生件分别留存。",
-  ["照片ID", "原文件名", "原件SHA-256", "真实日期", "地点", "活动", "拍摄/来源", "授权状态", "人物处理", "图题", "替代文本", "对应材料/案例", "派生文件", "派生SHA-256", "图号/位置"],
-  [20, 30, 68, 16, 22, 28, 22, 18, 20, 38, 38, 28, 34, 68, 22],
+  "只登记教师/学校真实提供的照片；原件可随包或受控留存，报送/公开派生件必须可核验。",
+  ["照片ID", "原文件名", "原件SHA-256", "真实日期", "地点", "活动", "拍摄/来源", "是否随包", "原件相对路径", "保管责任人", "受控定位", "保管核验日期", "授权状态", "人物处理", "图题", "替代文本", "对应材料/案例", "派生文件", "派生SHA-256", "图号/位置"],
+  [20, 30, 68, 16, 22, 28, 22, 14, 34, 18, 30, 16, 18, 20, 38, 38, 28, 34, 68, 22],
 );
 photos.getRange("D4:D33").format.numberFormat = "yyyy-mm-dd";
-photos.getRange("H4:H33").dataValidation = { rule: { type: "list", values: ["计划", "待取得", "已取得", "无需", "限制", "撤回"] } };
-photos.getRange("I4:I33").dataValidation = { rule: { type: "list", values: ["不适用", "无人脸", "背影", "裁切", "模糊", "明确同意可识别", "仅限原件"] } };
-addTable(photos, "PhotoRegister", "O");
+photos.getRange("H4:H33").dataValidation = { rule: { type: "list", values: ["是", "否"] } };
+photos.getRange("L4:L33").format.numberFormat = "yyyy-mm-dd";
+photos.getRange("M4:M33").dataValidation = { rule: { type: "list", values: ["计划", "待取得", "已取得", "无需", "限制", "撤回"] } };
+photos.getRange("N4:N33").dataValidation = { rule: { type: "list", values: ["不适用", "无人脸", "背影", "裁切", "模糊", "明确同意可识别", "仅限原件"] } };
+addTable(photos, "PhotoRegister", "T");
 
 const progress = createSheet(
   "材料进度",
@@ -257,6 +234,12 @@ await fs.mkdir(path.dirname(outputPath), { recursive: true });
 const xlsx = await SpreadsheetFile.exportXlsx(workbook);
 await xlsx.save(outputPath);
 await fs.rm(`${outputPath}.inspect.ndjson`, { force: true });
+const normalizer = fileURLToPath(new URL("./normalize_xlsx_views.py", import.meta.url));
+const python = process.env.PYTHON || "python3";
+const normalized = spawnSync(python, [normalizer, outputPath, "--freeze-rows", "3"], { encoding: "utf8" });
+if (normalized.status !== 0) {
+  throw new Error(`XLSX冻结窗格兼容处理失败：${normalized.stderr || normalized.stdout || "未知错误"}`);
+}
 
 if (qaDir) {
   await fs.mkdir(qaDir, { recursive: true });
