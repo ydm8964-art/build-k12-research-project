@@ -21,8 +21,11 @@ SCRIPTS = SKILL / "scripts"
 EXAMPLE = SKILL / "references" / "project-manifest.example.json"
 sys.path.insert(0, str(SCRIPTS))
 
+import audit_content_integrity  # noqa: E402
+import audit_docx_format  # noqa: E402
 import audit_lifecycle_coverage  # noqa: E402
 import audit_project_package  # noqa: E402
+import generate_attention_items  # noqa: E402
 import run_project_preflight  # noqa: E402
 import validate_project_manifest  # noqa: E402
 
@@ -69,7 +72,9 @@ class SkillTests(unittest.TestCase):
             elif source.suffix.lower() in {".docx", ".xlsx"}:
                 with zipfile.ZipFile(source) as archive:
                     for name in archive.namelist():
-                        if name.endswith(("document.xml", "sharedStrings.xml", "core.xml", "custom.xml")):
+                        if name.endswith(("document.xml", "sharedStrings.xml", "core.xml", "custom.xml")) or (
+                            name.startswith("xl/worksheets/") and name.endswith(".xml")
+                        ):
                             chunks.append(archive.read(name).decode("utf-8", errors="ignore"))
             combined = "\n".join(chunks)
             if any(value in combined for value in forbidden_text) or phone.search(combined) or identity.search(combined):
@@ -122,7 +127,12 @@ class SkillTests(unittest.TestCase):
             (evidence_dir / "raw.json").write_text("{}", encoding="utf-8")
             data = copy.deepcopy(self.example)
             data["evidence"][0].update(
-                {"status": "collected", "source_file": "evidence/raw.json", "collected_date": "2026-08-12"}
+                {
+                    "status": "collected",
+                    "delivery_included": True,
+                    "source_file": "evidence/raw.json",
+                    "collected_date": "2026-08-12",
+                }
             )
             manifest = root / "project-manifest.json"
             manifest.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
@@ -133,6 +143,62 @@ class SkillTests(unittest.TestCase):
             manifest.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
             errors, _ = audit_project_package.audit(manifest, root, final=True)
             self.assertTrue(any("source_file不存在" in value for value in errors))
+
+    def test_confidential_evidence_can_remain_in_controlled_custody(self) -> None:
+        data = copy.deepcopy(self.example)
+        data["evidence"][0].update(
+            {
+                "status": "collected",
+                "delivery_included": False,
+                "source_file": None,
+                "collected_date": "2026-08-12",
+                "custody_record": {
+                    "owner": "学校课题档案管理员",
+                    "locator": "校内受控档案柜A-01",
+                    "verified_at": "2026-08-12",
+                },
+            }
+        )
+        errors, _ = validate_project_manifest.validate(data)
+        self.assertFalse(any("证据 E-STU-SURVEY-RAW" in value for value in errors), errors)
+
+    def test_delivery_and_truth_state_must_match(self) -> None:
+        data = copy.deepcopy(self.example)
+        data["generation_contract"].update({"delivery_state": "closing-ready", "truth_state": "planning"})
+        errors, _ = validate_project_manifest.validate(data)
+        self.assertTrue(any("closing-ready" in value and "truth_state" in value for value in errors))
+
+    def test_attention_items_use_manifest_case_field_names(self) -> None:
+        from datetime import date
+
+        data = copy.deepcopy(self.example)
+        data["cases"][0].update(
+            {
+                "status": "implemented",
+                "implementation": {
+                    "date": "2026-08-01",
+                    "school": "示例学校",
+                    "grade_class": "八年级1班",
+                    "teacher_ids": ["P01"],
+                    "participant_n": 40,
+                    "actual_periods": 2,
+                    "material_version": "1.0",
+                    "deviations": ["无偏离"],
+                    "data_cutoff": "2026-08-01",
+                },
+                "evidence_ids": ["E-STU-SURVEY-RAW"],
+            }
+        )
+        issues = generate_attention_items.gather_issues(data, date(2026, 8, 12))
+        self.assertFalse(any(issue.category == "案例真实性" for issue in issues), issues)
+
+    def test_structured_bracket_placeholders_are_detected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "draft.md"
+            source.write_text("课题名称：【课题规范题目】\n负责人：【填写】", encoding="utf-8")
+            errors, warnings = audit_content_integrity.audit(source, "submission", True, None, [])
+            self.assertEqual(errors, [])
+            self.assertTrue(any("占位内容" in value for value in warnings))
 
     def test_final_preflight_treats_warnings_as_blocking(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -167,12 +233,26 @@ class SkillTests(unittest.TestCase):
                 core = archive.read("docProps/core.xml").decode("utf-8", errors="ignore")
                 self.assertNotRegex(core, r"<(?:dc:creator|cp:lastModifiedBy)>\s*[^<\s]")
             result = subprocess.run(
-                [sys.executable, str(SCRIPTS / "audit_docx_format.py"), str(source), "--profile", profile, "--final"],
+                [sys.executable, str(SCRIPTS / "audit_docx_format.py"), str(source), "--profile", profile],
                 text=True,
                 capture_output=True,
                 check=False,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_official_exact_detects_table_geometry_change(self) -> None:
+        from docx import Document
+        from docx.oxml.ns import qn
+
+        reference = SKILL / "assets" / "templates" / "research-form.docx"
+        with tempfile.TemporaryDirectory() as directory:
+            changed = Path(directory) / "changed.docx"
+            document = Document(reference)
+            first_col = document.tables[0]._tbl.tblGrid.findall(qn("w:gridCol"))[0]
+            first_col.set(qn("w:w"), str(int(first_col.get(qn("w:w"))) + 120))
+            document.save(changed)
+            errors, _ = audit_docx_format.audit(changed, "official-exact", reference, False)
+            self.assertTrue(any("列宽网格" in value for value in errors), errors)
 
     def test_xlsx_template_has_required_sheets_and_clean_formulas(self) -> None:
         source = SKILL / "assets" / "templates" / "project-data-workbook.xlsx"
@@ -186,9 +266,37 @@ class SkillTests(unittest.TestCase):
                 for name in archive.namelist()
                 if name.startswith("xl/worksheets/") and name.endswith(".xml")
             )
+            worksheet_roots = [
+                ET.fromstring(archive.read(name))
+                for name in archive.namelist()
+                if name.startswith("xl/worksheets/sheet") and name.endswith(".xml")
+            ]
         self.assertEqual(names, required)
+        namespace = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+        self.assertEqual(sum(len(root.findall(f".//{namespace}pane")) for root in worksheet_roots), 9)
+        self.assertGreaterEqual(sum(len(root.findall(f".//{namespace}dataValidation")) for root in worksheet_roots), 9)
         for token in ("#REF!", "#DIV/0!", "#VALUE!", "#NAME?", "AVERIF"):
             self.assertNotIn(token, formulas)
+
+        result = subprocess.run(
+            [sys.executable, str(SCRIPTS / "audit_xlsx_structure.py"), str(source)],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_final_standalone_audit_blocks_warnings(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "draft.md"
+            source.write_text("【填写】", encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(SCRIPTS / "audit_content_integrity.py"), str(source), "--final"],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
 
     def test_scripts_compile_and_are_executable(self) -> None:
         scripts = [source for source in SCRIPTS.iterdir() if source.suffix in {".py", ".mjs"}]

@@ -129,7 +129,9 @@
       "status": "planned",
       "privacy_class": "confidential",
       "collected_date": null,
+      "delivery_included": false,
       "source_file": null,
+      "custody_record": null,
       "consent_status": "planned"
     },
     {
@@ -141,7 +143,9 @@
       "location": null,
       "activity": "待实施的代表性课堂任务",
       "photographer_source": null,
+      "delivery_included": false,
       "source_file": null,
+      "custody_record": null,
       "derivative_file": null,
       "original_sha256": null,
       "derivative_sha256": null,
@@ -324,6 +328,7 @@
   ],
   "claims": [
     {
+      "id": "CLM-01",
       "text": "学生的主要学习困难将在调查后确定",
       "status": "planned",
       "evidence_ids": []

@@ -9,6 +9,7 @@ import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
+from audit_common import PLACEHOLDER_RE, cli_failed
 from docx import Document
 from docx.oxml.ns import qn
 
@@ -31,7 +32,6 @@ EVIDENCE_PATTERNS = (
     (re.compile(r"(?:显著|明显)(?:提高|提升|改善|增强|促进)"), "强效果结论"),
     (re.compile(r"(?:证明了|充分证明|取得了显著|得到广泛推广)"), "证明/推广结论"),
 )
-PLACEHOLDER_RE = re.compile(r"待填写|待补充|待确认|待插入真实照片|待照片|XXX+|\{\{[^{}]+\}\}|_{4,}", re.I)
 NUMBERING_RE = re.compile(r"^\s*(\d{1,2}(?:\.\d{1,2}){1,4})(?=\s|[、.．）)]|[\u4e00-\u9fff])")
 
 
@@ -219,7 +219,7 @@ def main() -> int:
         print(f"警告：{item}")
     for item in errors:
         print(f"错误：{item}")
-    if errors:
+    if cli_failed(errors, warnings, args.final):
         print(f"内容完整性审计未通过：{len(errors)}个错误，{len(warnings)}个警告")
         return 1
     print(f"内容完整性审计通过：0个错误，{len(warnings)}个警告")

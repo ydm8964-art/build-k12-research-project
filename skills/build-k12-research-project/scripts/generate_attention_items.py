@@ -338,7 +338,17 @@ def gather_issues(data: dict, as_of: date) -> list[Issue]:
             continue
         missing = []
         implementation = case.get("implementation") if isinstance(case.get("implementation"), dict) else {}
-        for key, label in (("date", "日期"), ("school", "学校"), ("class", "班级"), ("teacher", "教师"), ("student_n", "人数"), ("actual_periods", "实际课时")):
+        for key, label in (
+            ("date", "日期"),
+            ("school", "学校"),
+            ("grade_class", "年级班级"),
+            ("teacher_ids", "实施教师ID"),
+            ("participant_n", "参与人数"),
+            ("actual_periods", "实际课时"),
+            ("material_version", "材料版本"),
+            ("deviations", "实施偏离/无偏离记录"),
+            ("data_cutoff", "数据截止日"),
+        ):
             if text_missing(implementation.get(key)):
                 missing.append(label)
         if missing or not case.get("evidence_ids"):
@@ -367,7 +377,15 @@ def gather_photo_rows(data: dict, as_of: date) -> list[list[str]]:
     rows: list[list[str]] = []
     for index, item in enumerate(photos, 1):
         photo_id = str(item.get("id") or f"PHO-{as_of.year}-{index:03d}")
-        missing = [label for key, label in (("collected_date", "日期"), ("location", "地点"), ("photographer_source", "拍摄/来源"), ("source_file", "原件"), ("original_sha256", "哈希"), ("caption", "图题"), ("alt_text", "替代文本")) if text_missing(item.get(key))]
+        missing = [label for key, label in (("collected_date", "日期"), ("location", "地点"), ("photographer_source", "拍摄/来源"), ("original_sha256", "哈希"), ("caption", "图题"), ("alt_text", "替代文本")) if text_missing(item.get(key))]
+        if item.get("delivery_included") is True and text_missing(item.get("source_file")):
+            missing.append("随包原件")
+        if item.get("delivery_included") is False:
+            custody = item.get("custody_record") if isinstance(item.get("custody_record"), dict) else {}
+            if any(text_missing(custody.get(key)) for key in ("owner", "locator", "verified_at")):
+                missing.append("受控保管记录")
+        if not isinstance(item.get("delivery_included"), bool):
+            missing.append("是否随包交付")
         target_ids = [str(value) for value in item.get("material_ids", [])]
         targets = "、".join(f"{value} {materials.get(value, '')}".strip() for value in target_ids) or "照片证据册、对应案例/报告"
         activity = str(item.get("activity") or "按研究节点拍摄真实活动")
@@ -375,7 +393,7 @@ def gather_photo_rows(data: dict, as_of: date) -> list[list[str]]:
         status = str(item.get("status", "planned"))
         if missing:
             status += "；缺" + "、".join(missing)
-        rows.append([photo_id, "按活动日期归属阶段", activity, "真实日期、地点、拍摄来源、对应记录/案例ID、原件文件和SHA-256", consent, targets, status])
+        rows.append([photo_id, "按活动日期归属阶段", activity, "真实日期、地点、拍摄来源、对应记录/案例ID、原件SHA-256；原件随包或受控保管二选一", consent, targets, status])
     if rows:
         return rows
     profile = subject_profile(data)

@@ -13,11 +13,11 @@ from collections import defaultdict
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
+from audit_common import PLACEHOLDER_RE, cli_failed
 from validate_project_manifest import validate as validate_manifest
 
 READY_STATUSES = {"ready", "submitted", "archived"}
 PASS_QA = {"passed", "not-applicable"}
-PLACEHOLDER_RE = re.compile(r"待填写|待补充|待确认|待插入真实照片|待照片|XXX+|\{\{[^{}]+\}\}|_{4,}", re.I)
 SUSPICIOUS_NAME_RE = re.compile(r"最终版\d|最新版|修改版\d|副本|复件|copy|\(\d+\)|（\d+）", re.I)
 TEMP_NAMES = {".DS_Store", "Thumbs.db"}
 SUPPORTED_SUFFIXES = {".doc", ".docx", ".xlsx", ".pdf"}
@@ -121,7 +121,12 @@ def inspect_xlsx(path: Path, allowed_hidden: set[str], final: bool) -> tuple[lis
                 unapproved = [name for name in hidden if name not in allowed_hidden]
                 if unapproved:
                     (errors if final else warnings).append(f"XLSX含未登记隐藏工作表：{unapproved}")
-            text_names = [name for name in ("xl/sharedStrings.xml", "xl/workbook.xml") if name in names]
+            text_names = [
+                name
+                for name in names
+                if name in {"xl/sharedStrings.xml", "xl/workbook.xml"}
+                or (name.startswith("xl/worksheets/") and name.endswith(".xml"))
+            ]
             text = safe_read_zip_text(archive, text_names)
             placeholders = len(PLACEHOLDER_RE.findall(text))
             if placeholders:
@@ -301,13 +306,35 @@ def audit(manifest_path: Path, root: Path, final: bool) -> tuple[list[str], list
     for item in data.get("evidence", []):
         if not isinstance(item, dict) or item.get("status") not in {"collected", "verified", "completed"}:
             continue
+        evidence_id = item.get("id", "未编号")
+        delivery_included = item.get("delivery_included")
         source_file = item.get("source_file")
-        if source_file:
+        if delivery_included is True and source_file:
             actual, inside = resolve_material_path(root, str(Path(str(source_file)).expanduser()))
             if final and not inside:
-                errors.append(f"证据{item.get('id', '未编号')}的source_file不在交付根目录内：{actual}")
+                errors.append(f"证据{evidence_id}声明随包交付，但source_file不在交付根目录内：{actual}")
             if not actual.exists():
-                errors.append(f"证据{item.get('id', '未编号')}登记的source_file不存在：{actual}")
+                errors.append(f"证据{evidence_id}登记的source_file不存在：{actual}")
+            elif item.get("type") == "photo" and str(item.get("original_sha256", "")).lower() != sha256(actual):
+                errors.append(f"照片证据{evidence_id}原件SHA-256与登记值不一致")
+        elif delivery_included is True:
+            errors.append(f"证据{evidence_id}声明随包交付，但缺少source_file")
+        elif delivery_included is False:
+            custody = item.get("custody_record", {})
+            if not isinstance(custody, dict) or any(not custody.get(key) for key in ("owner", "locator", "verified_at")):
+                errors.append(f"证据{evidence_id}不随包交付，但缺少完整custody_record（owner/locator/verified_at）")
+        if item.get("type") == "photo":
+            derivative_file = item.get("derivative_file")
+            if not derivative_file:
+                errors.append(f"照片证据{evidence_id}缺少交付派生副本derivative_file")
+            else:
+                derivative, inside = resolve_material_path(root, str(Path(str(derivative_file)).expanduser()))
+                if final and not inside:
+                    errors.append(f"照片证据{evidence_id}的派生副本不在交付根目录内：{derivative}")
+                if not derivative.is_file():
+                    errors.append(f"照片证据{evidence_id}登记的派生副本不存在：{derivative}")
+                elif str(item.get("derivative_sha256", "")).lower() != sha256(derivative):
+                    errors.append(f"照片证据{evidence_id}派生副本SHA-256与登记值不一致")
 
     registered = {path.resolve() for path in actual_paths.values() if path.exists()}
     try:
@@ -341,7 +368,7 @@ def main() -> int:
         print(f"警告：{item}")
     for item in errors:
         print(f"错误：{item}")
-    if errors:
+    if cli_failed(errors, warnings, args.final):
         print(f"整套材料审计未通过：{len(errors)}个错误，{len(warnings)}个警告")
         return 1
     print(f"整套材料审计通过：0个错误，{len(warnings)}个警告")

@@ -39,7 +39,7 @@ def add_result(
             "check": check,
             "scope": scope,
             "material_id": material_id,
-            "status": "failed" if errors else "passed",
+            "status": "failed" if errors else ("warning" if warnings else "passed"),
             "errors": errors,
             "warnings": warnings,
         }

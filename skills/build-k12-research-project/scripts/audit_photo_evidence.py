@@ -12,6 +12,7 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+from audit_common import cli_failed
 from docx import Document
 
 try:
@@ -131,9 +132,18 @@ def add_manifest_checks(
     errors: list[str],
     warnings: list[str],
 ) -> None:
-    for key in ("collected_date", "location", "activity", "photographer_source", "source_file", "derivative_file", "original_sha256", "derivative_sha256", "consent_status", "publication_scope", "face_handling", "caption", "alt_text", "material_ids"):
+    for key in ("collected_date", "location", "activity", "photographer_source", "derivative_file", "original_sha256", "derivative_sha256", "consent_status", "publication_scope", "face_handling", "caption", "alt_text", "material_ids"):
         if not item.get(key):
             errors.append(f"照片登记{photo_id}缺少{key}")
+    delivery_included = item.get("delivery_included")
+    if not isinstance(delivery_included, bool):
+        errors.append(f"照片登记{photo_id}缺少布尔值delivery_included")
+    elif delivery_included and not item.get("source_file"):
+        errors.append(f"照片登记{photo_id}声明原件随包交付，但缺少source_file")
+    elif delivery_included is False:
+        custody = item.get("custody_record")
+        if not isinstance(custody, dict) or any(not custody.get(key) for key in ("owner", "locator", "verified_at")):
+            errors.append(f"照片登记{photo_id}原件不随包交付，但缺少完整custody_record")
     for digest_key in ("original_sha256", "derivative_sha256"):
         digest = str(item.get(digest_key, ""))
         if digest and (len(digest) != 64 or not re.fullmatch(r"[0-9a-fA-F]{64}", digest)):
@@ -154,12 +164,18 @@ def add_manifest_checks(
         if item.get("face_handling") not in SAFE_PUBLIC_FACE:
             errors.append(f"照片{photo_id}用于匿名/公开版，但人物处理状态不合格")
 
-    for key, label in (("source_file", "原件"), ("derivative_file", "派生副本")):
+    path_fields = [("derivative_file", "派生副本")]
+    if delivery_included is True:
+        path_fields.append(("source_file", "原件"))
+    for key, label in path_fields:
         value = item.get(key)
         if not value:
             continue
         raw = Path(str(value)).expanduser()
         actual = raw.resolve() if raw.is_absolute() else (manifest_root / raw).resolve()
+        inside = actual == manifest_root or manifest_root in actual.parents
+        if final and not inside:
+            errors.append(f"照片{photo_id}登记的{label}不在交付根目录内：{actual}")
         if not actual.is_file():
             message = f"照片{photo_id}登记的{label}路径不存在：{actual}"
             (errors if final else warnings).append(message)
@@ -309,7 +325,7 @@ def main() -> int:
         print(f"警告：{item}")
     for item in errors:
         print(f"错误：{item}")
-    if errors:
+    if cli_failed(errors, warnings, args.final):
         print(f"照片证据审计未通过：{len(errors)}个错误，{len(warnings)}个警告")
         return 1
     print(f"照片证据审计通过：0个错误，{len(warnings)}个警告")

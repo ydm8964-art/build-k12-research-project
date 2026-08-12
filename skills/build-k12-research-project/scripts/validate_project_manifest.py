@@ -132,8 +132,25 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
         for index, exemption in enumerate(exemptions, 1):
             if not isinstance(exemption, dict) or not exemption.get("group") or not exemption.get("reason"):
                 errors.append(f"generation_contract.coverage_exemptions[{index}] 必须包含group和reason")
-    if generation.get("delivery_state") == "closing-ready" and generation.get("truth_state") not in {"closing", "completed"}:
-        errors.append("delivery_state为closing-ready时，truth_state必须是closing或completed")
+    delivery_state = generation.get("delivery_state")
+    truth_state = generation.get("truth_state")
+    package_scope = generation.get("package_scope")
+    state_rules = {
+        "application-ready": {"planning"},
+        "implementation-ready": {"implementing"},
+        "full-lifecycle-scaffold": {"planning", "implementing"},
+        "closing-ready": {"closing", "completed"},
+    }
+    if delivery_state in state_rules and truth_state not in state_rules[delivery_state]:
+        errors.append(f"delivery_state为{delivery_state}时，truth_state必须属于{sorted(state_rules[delivery_state])}")
+    scope_rules = {
+        "application-ready": {"application-kit", "custom"},
+        "implementation-ready": {"implementation-kit", "full-lifecycle-kit", "custom"},
+        "full-lifecycle-scaffold": {"full-lifecycle-kit", "custom"},
+        "closing-ready": {"closing-kit", "full-lifecycle-kit", "custom"},
+    }
+    if delivery_state in scope_rules and package_scope not in scope_rules[delivery_state]:
+        errors.append(f"delivery_state为{delivery_state}时，package_scope不应为{package_scope!r}")
 
     contributors = data.get("contributors", [])
     if not isinstance(contributors, list) or not contributors:
@@ -189,24 +206,34 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
 
     questions = data.get("research_questions", [])
     mappings = data.get("logic_mappings", [])
-    if not questions:
+    if not isinstance(questions, list) or not questions:
         errors.append("research_questions 至少包含一项")
+        questions = []
     if not isinstance(mappings, list):
         errors.append("logic_mappings 必须是数组")
         mappings = []
     mapped = {str(item.get("question_id")) for item in mappings if isinstance(item, dict)}
-    for item in questions if isinstance(questions, list) else []:
+    question_ids: set[str] = set()
+    for item in questions:
         qid = str(item.get("id", "")) if isinstance(item, dict) else ""
         if not qid:
             errors.append("每个 research_questions 项必须有 id")
+        elif qid in question_ids:
+            errors.append(f"research_questions 存在重复 id：{qid}")
         elif qid not in mapped:
             errors.append(f"研究问题 {qid} 缺少 logic_mappings")
+        question_ids.add(qid)
 
     needed = ("goal", "content", "method", "activity", "output", "evidence")
     for index, item in enumerate(mappings, 1):
         if not isinstance(item, dict):
             errors.append(f"logic_mappings[{index}] 必须是对象")
             continue
+        question_id = str(item.get("question_id", ""))
+        if not question_id:
+            errors.append(f"logic_mappings[{index}].question_id 不能为空")
+        elif question_id not in question_ids:
+            errors.append(f"logic_mappings[{index}] 引用了不存在的研究问题：{question_id}")
         for key in needed:
             if not item.get(key):
                 errors.append(f"logic_mappings[{index}].{key} 不能为空")
@@ -275,8 +302,21 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
         if item.get("privacy_class") not in PRIVACY_CLASSES:
             errors.append(f"证据 {eid or index} 缺少有效 privacy_class")
         if item.get("status") in {"collected", "verified", "completed"}:
-            if not item.get("source_file"):
-                errors.append(f"证据 {eid or index} 已采集/核验，但缺少 source_file")
+            delivery_included = item.get("delivery_included")
+            if not isinstance(delivery_included, bool):
+                errors.append(f"证据 {eid or index} 已采集/核验，delivery_included必须是布尔值")
+            elif delivery_included and not item.get("source_file"):
+                errors.append(f"证据 {eid or index} 声明随包交付，但缺少 source_file")
+            elif delivery_included is False:
+                custody = item.get("custody_record")
+                if not isinstance(custody, dict):
+                    errors.append(f"证据 {eid or index} 不随包交付，但缺少 custody_record 对象")
+                else:
+                    for key in ("owner", "locator", "verified_at"):
+                        if not str(custody.get(key, "")).strip():
+                            errors.append(f"证据 {eid or index}.custody_record.{key} 不能为空")
+                    if custody.get("verified_at"):
+                        parse_day(str(custody.get("verified_at")), f"evidence[{index}].custody_record.verified_at", errors)
             if not item.get("collected_date"):
                 errors.append(f"证据 {eid or index} 已采集/核验，但缺少 collected_date")
             else:
@@ -295,7 +335,7 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
             if item.get("face_handling") not in FACE_HANDLING:
                 errors.append(f"照片 {eid or index} 缺少有效 face_handling")
             if item.get("status") in {"collected", "verified", "completed"}:
-                for key in ("location", "activity", "photographer_source", "source_file", "derivative_file", "original_sha256", "derivative_sha256", "caption", "alt_text", "material_ids"):
+                for key in ("location", "activity", "photographer_source", "derivative_file", "original_sha256", "derivative_sha256", "caption", "alt_text", "material_ids"):
                     if not item.get(key):
                         errors.append(f"照片 {eid or index} 已采集/核验，但缺少 {key}")
                 if "transformation_log" not in item or not isinstance(item.get("transformation_log"), list):
@@ -595,16 +635,26 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
     if claims and not isinstance(claims, list):
         errors.append("claims 必须是数组")
         claims = []
+    claim_ids: set[str] = set()
     for index, claim in enumerate(claims, 1):
         if not isinstance(claim, dict):
             errors.append(f"claims[{index}] 必须是对象")
             continue
+        claim_id = str(claim.get("id", "")).strip()
+        if not claim_id:
+            errors.append(f"claims[{index}].id 不能为空")
+        elif claim_id in claim_ids:
+            errors.append(f"claims 存在重复 id：{claim_id}")
+        claim_ids.add(claim_id)
         if claim.get("status") not in CLAIM_STATUSES:
             errors.append(f"claims[{index}] 缺少有效 status")
         claim_evidence = claim.get("evidence_ids", [])
+        if not isinstance(claim_evidence, list):
+            errors.append(f"claims[{index}].evidence_ids 必须是数组")
+            claim_evidence = []
         if claim.get("status") in {"verified", "completed"} and not claim_evidence:
             errors.append(f"claims[{index}] 已标记为已证实，但没有 evidence_ids")
-        for evidence_id in claim_evidence if isinstance(claim_evidence, list) else []:
+        for evidence_id in claim_evidence:
             if evidence_id not in evidence_ids:
                 errors.append(f"claims[{index}] 引用了不存在的证据：{evidence_id}")
 

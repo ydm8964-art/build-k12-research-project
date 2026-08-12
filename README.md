@@ -43,7 +43,7 @@ python ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-github
 python skills/build-k12-research-project/scripts/check_environment.py
 ```
 
-Python 端需要 `python-docx`；照片元数据和 PDF 深度审计建议安装 `Pillow`、`pypdf`。XLSX 生成脚本使用 Codex 工作区随附的 `@oai/artifact-tool`，预生成的 XLSX 母版无需重新构建即可使用。
+Python 端需要 `python-docx`；照片元数据和 PDF 深度审计建议安装 `Pillow`、`pypdf`。预生成的 XLSX 母版可直接使用。重建母版时先加载 Codex 工作区依赖，把生成脚本和冻结窗格兼容脚本复制到同一可写目录，建立指向其`node_modules`的符号链接，再用其Node运行；主脚本只从公开包入口导入`@oai/artifact-tool`。
 
 ## 质量与真实性边界
 

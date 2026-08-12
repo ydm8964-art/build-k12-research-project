@@ -9,12 +9,14 @@ import zipfile
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
+from audit_common import cli_failed
+
 MAIN_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 PKG_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
 FORMULA_ERROR_RE = re.compile(r"#(?:REF!|DIV/0!|VALUE!|NAME\?|N/A|NUM!|NULL!)", re.I)
 CELL_RANGE_RE = re.compile(r"[A-Z]+(\d+)(?::[A-Z]+(\d+))?")
-DATA_SHEET_TOKENS = ("原始数据", "清理", "编码", "证据索引", "材料进度")
+DATA_SHEET_TOKENS = ("原始数据", "清理", "编码", "证据索引", "照片登记", "材料进度")
 
 
 def worksheet_target(target: str) -> str:
@@ -108,11 +110,15 @@ def audit(path: Path, required_sheets: list[str], allowed_hidden_sheets: list[st
 
                 rows = approximate_rows(root)
                 is_data_sheet = any(token in sheet_name for token in DATA_SHEET_TOKENS)
-                if is_data_sheet and rows > 20:
+                has_table = root.find(f"{{{MAIN_NS}}}tableParts") is not None
+                has_entry_area = rows > 20 or has_table
+                if is_data_sheet and has_entry_area:
                     if root.find(f".//{{{MAIN_NS}}}pane") is None:
                         warnings.append(f"数据型工作表{sheet_name}超过20行但未冻结窗格")
-                    if root.find(f"{{{MAIN_NS}}}autoFilter") is None:
+                    if root.find(f"{{{MAIN_NS}}}autoFilter") is None and not has_table:
                         warnings.append(f"数据型工作表{sheet_name}超过20行但未设置筛选")
+                    if root.find(f"{{{MAIN_NS}}}dataValidations") is None:
+                        warnings.append(f"数据型工作表{sheet_name}未设置数据验证；核对日期、类别和状态列的输入约束")
                 if is_data_sheet and root.find(f"{{{MAIN_NS}}}mergeCells") is not None:
                     warnings.append(f"数据型工作表{sheet_name}含合并单元格，可能影响筛选、排序和数据分析")
                 if state != "visible" and sheet_name not in allowed_hidden_sheets:
@@ -136,7 +142,7 @@ def main() -> int:
         print(f"警告：{item}")
     for item in errors:
         print(f"错误：{item}")
-    if errors:
+    if cli_failed(errors, warnings, args.final):
         print(f"工作簿结构审计未通过：{len(errors)}个错误，{len(warnings)}个警告")
         return 1
     print(f"工作簿结构审计通过：0个错误，{len(warnings)}个警告")
