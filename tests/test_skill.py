@@ -25,11 +25,15 @@ import audit_content_integrity  # noqa: E402
 import audit_docx_format  # noqa: E402
 import audit_lifecycle_coverage  # noqa: E402
 import audit_project_package  # noqa: E402
+import build_material_generation_plan  # noqa: E402
 import generate_attention_items  # noqa: E402
+import generate_topic_candidates  # noqa: E402
 import initialize_project_package  # noqa: E402
 import plan_incremental_refresh  # noqa: E402
+import project_workflow  # noqa: E402
 import register_material_file  # noqa: E402
 import run_project_preflight  # noqa: E402
+import select_topic_and_prepare_intake  # noqa: E402
 import validate_project_manifest  # noqa: E402
 
 
@@ -276,6 +280,95 @@ class SkillTests(unittest.TestCase):
         )
         generic = generate_attention_items.GENERIC_SUBJECT_PROFILE
         self.assertEqual([value for value in subjects if generate_attention_items.profile_for_subject(value) is generic], [])
+
+    def test_topic_generator_returns_5_to_8_scored_subject_aware_candidates(self) -> None:
+        profile = json.loads((SKILL / "references" / "teacher-profile.example.json").read_text(encoding="utf-8"))
+        for count in (5, 6, 7, 8):
+            result = generate_topic_candidates.generate(profile, count)
+            self.assertEqual(len(result["candidates"]), count)
+            self.assertEqual(len({item["title"] for item in result["candidates"]}), count)
+            self.assertEqual([item["priority_rank"] for item in result["candidates"]], list(range(1, count + 1)))
+            for item in result["candidates"]:
+                self.assertEqual(sum(item["score_explanation"].values()), item["score"])
+                self.assertEqual(item["subject_coverage"][0]["subject"], "数学")
+                self.assertEqual(item["subject_coverage"][0]["role"], "main")
+
+    def test_cross_subject_candidates_register_each_real_subject(self) -> None:
+        profile = json.loads((SKILL / "references" / "teacher-profile.example.json").read_text(encoding="utf-8"))
+        profile["teaching"].update({"subject": "地理", "related_subjects": ["信息科技"]})
+        profile["problem"]["description"] = "学生使用数字地图解释区域差异时只会找位置，不会组织证据"
+        result = generate_topic_candidates.generate(profile, 8)
+        cross = [item for item in result["candidates"] if item["route"].startswith("跨学科")]
+        self.assertEqual(len(cross), 2)
+        for item in cross:
+            self.assertEqual([value["subject"] for value in item["subject_coverage"]], ["地理", "信息科技"])
+            self.assertEqual([value["role"] for value in item["subject_coverage"]], ["main", "related"])
+
+    def test_topic_profiles_cover_lab_art_pe_early_and_special_safety(self) -> None:
+        profile = json.loads((SKILL / "references" / "teacher-profile.example.json").read_text(encoding="utf-8"))
+        cases = {
+            "化学": ("实验现象记录不完整，不能用证据解释反应", "危化品"),
+            "体育与健康": ("学生在篮球练习中动作差异大且缺少过程反馈", "急救预案"),
+            "美术": ("学生创作只重成品，缺少构思和修改过程", "图片版权"),
+            "幼小衔接": ("幼儿入学准备活动被单次测评替代", "不过度测评"),
+            "特殊教育": ("融合课堂中的个别化支持记录零散", "敏感信息保护"),
+        }
+        for subject, (problem, expected_risk) in cases.items():
+            with self.subTest(subject=subject):
+                profile["teaching"].update({"subject": subject, "related_subjects": []})
+                profile["problem"]["description"] = problem
+                result = generate_topic_candidates.generate(profile, 5)
+                self.assertIn(expected_risk, "；".join(result["candidates"][0]["risks"]))
+                self.assertTrue(result["candidates"][0]["evidence_plan"])
+
+    def test_selected_topic_prepares_valid_intake_and_missing_fields_block(self) -> None:
+        profile = json.loads((SKILL / "references" / "teacher-profile.example.json").read_text(encoding="utf-8"))
+        topics = generate_topic_candidates.generate(profile, 6)
+        selected = select_topic_and_prepare_intake.prepare(profile, topics, "TOPIC-02")
+        self.assertTrue(selected["ready_for_initialization"])
+        manifest = initialize_project_package.build_manifest(selected["project_intake"])
+        errors, _ = validate_project_manifest.validate(manifest)
+        self.assertEqual(errors, [])
+
+        changed = select_topic_and_prepare_intake.prepare(profile, topics, "TOPIC-02", "真实问题导向的初中数学函数建模任务设计研究")
+        self.assertTrue(changed["title_modified"])
+        self.assertEqual(changed["project_intake"]["project"]["title"], "真实问题导向的初中数学函数建模任务设计研究")
+
+        del profile["timeline"]["completion"]
+        blocked = select_topic_and_prepare_intake.prepare(profile, topics, "TOPIC-02")
+        self.assertFalse(blocked["ready_for_initialization"])
+        self.assertIn("timeline.completion", blocked["missing_after_selection"])
+        self.assertNotIn("project_intake", blocked)
+
+    def test_generation_plan_has_every_material_truth_and_format_gate(self) -> None:
+        intake = json.loads((SKILL / "references" / "project-intake.example.json").read_text(encoding="utf-8"))
+        manifest = initialize_project_package.build_manifest(intake)
+        plan = build_material_generation_plan.build(manifest)
+        self.assertEqual(plan["material_job_count"], 26)
+        self.assertEqual({job["material_id"] for job in plan["jobs"]}, {item["id"] for item in manifest["materials"]})
+        application = next(job for job in plan["jobs"] if job["material_id"] == "M01")
+        final_report = next(job for job in plan["jobs"] if job["material_id"] == "M21")
+        self.assertEqual(application["execution_state"], "blocked-template")
+        self.assertIn("当年官方模板或用户指定同类模板", application["truth_blockers_for_finalization"])
+        self.assertIn("真实原始数据或实施记录", final_report["truth_blockers_for_finalization"])
+        self.assertTrue(all(job["source_manifest_fields"] and job["completion_gate"] for job in plan["jobs"]))
+
+    def test_end_to_end_workflow_reaches_material_queue(self) -> None:
+        profile_path = SKILL / "references" / "teacher-profile.example.json"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "workflow"
+            start = project_workflow.start(profile_path, root, 6)
+            self.assertEqual(start["state"], "awaiting-topic-selection")
+            selected, code = project_workflow.select(root, "TOPIC-02")
+            self.assertEqual(code, 0)
+            self.assertEqual(selected["state"], "ready-to-initialize")
+            state = project_workflow.initialize_workspace(root, SKILL)
+            self.assertEqual(state["state"], "package-in-progress")
+            plan = json.loads((root / "workflow-control" / "material-generation-plan.json").read_text(encoding="utf-8"))
+            self.assertEqual(plan["material_job_count"], 26)
+            self.assertIn("JOB-M00", plan["next_jobs"])
+            self.assertIn("JOB-M01", plan["blocked_jobs"])
+            self.assertNotIn("JOB-M01", plan["next_jobs"])
 
     def test_material_dependency_cycles_are_rejected(self) -> None:
         data = copy.deepcopy(self.example)

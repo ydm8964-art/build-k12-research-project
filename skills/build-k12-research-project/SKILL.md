@@ -20,6 +20,7 @@ description: 为贵州省及黔东南州中小学教师规划、申报、实施�
 ## 必读路由
 
 - 信息采集、方向推荐、题目规范：读 [intake-and-topic.md](references/intake-and-topic.md)。
+- 只有基本情况，需要稳定生成候选题目并衔接全套材料：以[teacher-profile.example.json](references/teacher-profile.example.json)建立输入，运行`project_workflow.py`；候选题由`generate_topic_candidates.py`校验数量、学科证据和跨学科覆盖。
 - 确定整套材料范围、阶段和依赖关系：读 [dossier-map.md](references/dossier-map.md)。
 - 撰写具体材料：读 [material-specifications.md](references/material-specifications.md)。
 - 设计问卷、访谈、观察、数据分析和效果证据：读 [methods-and-evidence.md](references/methods-and-evidence.md)。
@@ -47,6 +48,14 @@ description: 为贵州省及黔东南州中小学教师规划、申报、实施�
 - 偏好的研究对象、成果形式，以及是否有当年通知和官方模板。
 
 推荐 5—8 个有明显差异的方向。每个方向给出“拟题、核心问题、研究对象、创新点、主要成果、实施难度、数据可得性”，并说明优先级。题目确认前不批量生成全套材料。
+
+不要每次从空白提示词临时拼选题。先把已知基本情况写入独立JSON，再运行：
+
+```bash
+python scripts/project_workflow.py start --profile teacher-profile.json --root topic-workspace --count 6
+```
+
+把`topic-candidates.md`中的5—8项候选直接展示给用户；允许用户回复候选ID或提出修改。脚本输出是确定性底稿，Agent仍须检查题目是否自然、是否贴合用户原话、是否使用当年政策/课标的准确名称；不得为提高分数虚构政策依据。
 
 题目应同时包含研究对象或情境、核心变量或策略、研究内容/目标，避免空泛口号、范围过大、因果承诺过强和多个研究中心并列。
 
@@ -83,6 +92,16 @@ description: 为贵州省及黔东南州中小学教师规划、申报、实施�
 
 先向用户展示“课题逻辑摘要＋材料目录＋时间轴”。只有题目已确认且必要事实足够时，才开始正式生成。
 
+用户选择候选ID后运行：
+
+```bash
+python scripts/project_workflow.py select --root topic-workspace --topic-id TOPIC-02
+```
+
+用户对候选题目作了小幅修改时，追加`--title "最终确认题目"`；保留该候选的方向、证据和方法逻辑，同时把修改后的题目冻结为唯一正式题目。
+
+若返回`awaiting-project-details`，只追问清单中的阻断字段；不要重复询问已经记录的信息，也不要臆造管理单位、年度模板、申报日或完成日。返回`ready-to-initialize`后运行`project_workflow.py initialize`，把已选题目、问题、策略、学科覆盖和时间统一冻结到主清单。
+
 用户要求一次性生成时，只设置一个题目确认节点。确认后冻结同一主清单快照，按`application-kit/implementation-kit/full-lifecycle-kit/closing-kit`整批生成；已登记的信息不重复询问。未来事实缺失时仍可生成实施工具和结果材料骨架，但对应文件必须保持`pending-data/pending-photo/pending-signature`，并把整套状态标为`full-lifecycle-scaffold`，不能伪称结题终稿。
 
 题目确认且一次采集信息完整后，优先以[project-intake.example.json](references/project-intake.example.json)为字段样例创建独立输入JSON，再运行初始化器。初始化器固定创建26项生命周期角色、标准文件夹、项目主清单、根目录注意事项、交付索引和数据工作簿草稿，不覆盖已有控制文件：
@@ -93,7 +112,21 @@ python scripts/initialize_project_package.py --intake project-intake.json --root
 
 初始化产物是可继续制作的`scaffold`；DOCX/XLSX在完成真实内容填充、渲染和QA前保持`draft`。生成或更新单份文件后，使用`register_material_file.py`登记相对路径、SHA-256和状态；提升为`ready`必须提供真实QA报告，禁止只改JSON状态。
 
+初始化后必须在材料包外的`workflow-control/`生成`material-generation-plan.json`，不得停在空目录或把26个角色清单当作已生成材料。该计划把每份材料转换为包含依赖、主清单事实来源、内容合同、格式母版、真实性阻断和QA门槛的任务；工作流控制JSON默认不混入正式交付包。
+
 ## 阶段三：按依赖顺序生成
+
+按以下闭环持续执行，直到当前真实性阶段内所有可完成材料已经制作，不能生成终稿的材料也已有结构完整的工作稿和明确待办：
+
+1. 运行`python scripts/project_workflow.py plan --root topic-workspace`刷新任务队列；
+2. 只处理`material-generation-plan.json`中的`next_jobs`；`blocked_jobs`先补官方模板或真实输入；
+3. 从每个任务的`source_manifest_fields`读取唯一事实，按`content_contract`写正文；
+4. 使用登记的官方模板或对应通用母版，完成内容、格式、渲染、隐私及适用的数据/照片QA；
+5. 用`register_material_file.py`登记文件、哈希和真实状态，再刷新任务队列；
+6. 上游事实变化时先更新主清单快照并运行`plan_incremental_refresh.py`，不要在下游文件中零散修改；
+7. 最后刷新注意事项、工作簿、交付索引并运行一键预检。
+
+单个Agent执行整套生成时，要在同一任务中主动重复以上闭环，不要每写一份材料都重新向用户确认。只有遇到会改变研究事实、官方格式或真实性状态的阻断项时才暂停。
 
 遵循以下顺序，前一层是后一层的约束：
 

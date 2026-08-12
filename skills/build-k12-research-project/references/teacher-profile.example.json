@@ -1,0 +1,58 @@
+{
+  "teacher": {
+    "name": "示例教师",
+    "title": "一级教师",
+    "role": "学科教师"
+  },
+  "school": {
+    "name": "贵州省黔东南州示例学校",
+    "region": "贵州省黔东南州",
+    "context": "县城学校，班级学生差异较明显"
+  },
+  "teaching": {
+    "stage": "初中",
+    "subject": "数学",
+    "related_subjects": [],
+    "textbook_version": "待核验",
+    "grade_classes": ["八年级1班", "八年级2班"],
+    "student_count": 96
+  },
+  "problem": {
+    "description": "学生解决函数真实问题时不会从情境提取变量关系，解题过程缺少依据",
+    "observed_evidence": ["课堂作业中列式错误较集中", "学生讲题时难以说明变量关系"],
+    "existing_practices": ["使用过错题讲评和小组讨论"],
+    "available_resources": ["两班日常作业", "单元检测", "教研组听课"]
+  },
+  "application": {
+    "current_date": "2026-08-13",
+    "year": 2026,
+    "level": "州级",
+    "authority": "黔东南州教育科研管理部门",
+    "package_scope": "full-lifecycle-kit",
+    "truth_state": "planning",
+    "project_status": "planning",
+    "official_requirements_verified": false,
+    "deadline": null,
+    "submission_mode": "pending"
+  },
+  "timeline": {
+    "application": "2026-09-01",
+    "opening": "2026-12-01",
+    "instrument_design": "2026-12-15",
+    "pilot": "2027-01-10",
+    "data_collection_start": "2027-02-20",
+    "data_collection_end": "2027-04-30",
+    "analysis": "2027-05-20",
+    "intervention_start": "2027-06-01",
+    "midterm": "2027-11-01",
+    "intervention_end": "2028-03-01",
+    "completion": "2028-06-01"
+  },
+  "research_preferences": {
+    "planned_dosage": "两个教学单元，每单元3课时",
+    "preferred_outputs": ["研究报告", "教学案例", "任务单", "评价量规"]
+  },
+  "delivery": {
+    "target_versions": ["working", "submission"]
+  }
+}
