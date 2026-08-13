@@ -22,6 +22,8 @@ const qaDir = qaDirValue ? path.resolve(qaDirValue) : null;
 const manifest = JSON.parse(await fs.readFile(manifestPath, "utf8"));
 const workbook = await SpreadsheetFile.importXlsx(await FileBlob.load(inputPath));
 const project = manifest.project || {};
+const projectContext = manifest.project_context || {};
+const problemContext = manifest.problem_context || {};
 const governance = manifest.governance || {};
 const generation = manifest.generation_contract || {};
 const requirements = manifest.submission_requirements || {};
@@ -33,7 +35,7 @@ info.getRange("B4:B13").values = [
   [project.title || "[填写]"],
   [project.leader || "[填写]"],
   [project.school || "[填写]"],
-  [`${project.stage || "[填写]"}/${subjects.join("、") || "[填写]"}`],
+  [`${project.stage || "[填写]"}/${subjects.join("、") || "[填写]"}｜${(projectContext.grade_classes || []).join("、") || "班级待确认"}`],
   [`${timeline.application || "[填写]"}至${timeline.completion || "[填写]"}`],
   [governance.data_cutoff || "[待真实数据形成后填写]"],
   [(manifest.samples || []).map((item) => `${item.name || "样本"}：计划${item.planned_n ?? "未定"}，实际${item.actual_n ?? "待采集"}`).join("；") || "[填写]"],
@@ -41,6 +43,38 @@ info.getRange("B4:B13").values = [
   [generation.snapshot_id || "V0.1"],
   [`${requirements.authority || "待核验"}｜${requirements.status || "pending"}`],
 ];
+info.getRange("H4:H13").values = [
+  [projectContext.region || "[待确认]"],
+  [projectContext.school_context || "[待确认校情]"],
+  [projectContext.textbook_version || "[待核验教材版本]"],
+  [problemContext.description || "[待确认真实问题]"],
+  [(problemContext.observed_evidence || []).join("；") || "[待补基线证据]"],
+  [(problemContext.existing_practices || []).join("；") || "[待补已有做法]"],
+  [(problemContext.available_resources || []).join("；") || "[待补可用资源]"],
+  [problemContext.selected_route || "[待确认选题路线]"],
+  [problemContext.selected_core_strategy || "[待确认核心策略]"],
+  [projectContext.teacher_title || projectContext.teacher_role || "[待确认教师信息]"],
+];
+info.getRange("G3:H3").values = [["项目背景", "内容"]];
+info.getRange("G4:G13").values = [
+  ["地区"], ["学校情境"], ["教材版本"], ["真实问题"], ["已有证据"],
+  ["已有做法"], ["可用资源"], ["选题路线"], ["核心策略"], ["教师职称/职务"],
+];
+info.getRange("G3:H3").format = {
+  fill: "#1F4E78", font: { bold: true, color: "#FFFFFF" },
+  horizontalAlignment: "center", verticalAlignment: "center", wrapText: true,
+};
+info.getRange("G4:G13").format = {
+  fill: "#D9EAF7", font: { bold: true, color: "#1F2937" },
+  verticalAlignment: "center", wrapText: true,
+};
+info.getRange("H4:H13").format = {
+  fill: "#FFF7D6", font: { color: "#1F2937" },
+  verticalAlignment: "center", wrapText: true,
+};
+info.getRange("G3:H13").format.borders = { preset: "all", style: "thin", color: "#B7C9D6" };
+info.getRange("G3:G13").format.columnWidth = 15;
+info.getRange("H3:H13").format.columnWidth = 38;
 info.getRange("C4:C13").values = [
   ["已核验"], ["已核验"], ["已核验"], ["已核验"], ["已核验"],
   [governance.data_cutoff ? "已核验" : "待确认"], ["工作版"], ["待确认"], ["工作版"],

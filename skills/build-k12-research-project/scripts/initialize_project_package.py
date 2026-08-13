@@ -88,8 +88,10 @@ def build_manifest(intake: dict) -> dict:
     requirements.setdefault("file_rules", {"max_size_mb": None, "naming_rule": None, "copies": None})
 
     manifest = {
-        "schema_version": "1.2",
+        "schema_version": "1.3",
         "project": intake["project"],
+        "project_context": intake.get("project_context", {}),
+        "problem_context": intake.get("problem_context", {}),
         "governance": intake["governance"],
         "generation_contract": generation,
         "submission_requirements": requirements,

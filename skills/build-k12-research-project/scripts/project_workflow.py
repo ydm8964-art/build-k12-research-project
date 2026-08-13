@@ -76,7 +76,7 @@ def initialize_workspace(root: Path, skill_root: Path) -> dict:
     write_json(control_root / PLAN_NAME, plan)
     return write_state(root, "package-in-progress", package_root=PACKAGE_NAME,
                        manifest=f"{PACKAGE_NAME}/project-manifest.json", plan=f"workflow-control/{PLAN_NAME}",
-                       next_jobs=plan["next_jobs"], blocked_jobs=plan["blocked_jobs"],
+                       next_jobs=plan["next_jobs"], blocked_jobs=plan["blocked_jobs"], waiting_jobs=plan["waiting_jobs"],
                        next_action="由Agent处理next_jobs，登记材料后重新运行plan子命令")
 
 
@@ -90,7 +90,8 @@ def refresh_plan(root: Path) -> dict:
     write_json(control_root / PLAN_NAME, plan)
     state_name = "package-complete" if not plan["unfinished_jobs"] else "package-in-progress"
     return write_state(root, state_name, package_root=PACKAGE_NAME, next_jobs=plan["next_jobs"],
-                       blocked_jobs=plan["blocked_jobs"], next_action="继续处理可执行任务或补齐阻断项")
+                       blocked_jobs=plan["blocked_jobs"], waiting_jobs=plan["waiting_jobs"],
+                       next_action="继续处理可执行任务；补齐模板/真实输入阻断项；等待项按waiting_for_material_ids推进")
 
 
 def main() -> int:

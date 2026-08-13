@@ -4,6 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import os
+import zipfile
+from datetime import UTC, datetime
 from pathlib import Path
 
 from docx import Document
@@ -63,6 +66,26 @@ def setup(doc: Document, title: str) -> None:
     doc.core_properties.author = ""
     doc.core_properties.last_modified_by = ""
     add_page_field(section.footer.paragraphs[0])
+
+
+def save_stable(doc: Document, path: Path) -> None:
+    """Save with stable package metadata so rebuilding unchanged assets is reproducible."""
+    stable_time = datetime(2000, 1, 1, tzinfo=UTC)
+    doc.core_properties.created = stable_time
+    doc.core_properties.modified = stable_time
+    doc.save(path)
+    normalized = path.with_suffix(path.suffix + ".normalized")
+    with zipfile.ZipFile(path, "r") as source, zipfile.ZipFile(normalized, "w", zipfile.ZIP_DEFLATED) as target:
+        for original in source.infolist():
+            info = zipfile.ZipInfo(original.filename, (2000, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = original.external_attr
+            info.internal_attr = original.internal_attr
+            info.create_system = original.create_system
+            info.flag_bits = original.flag_bits
+            target.writestr(info, source.read(original.filename))
+    normalized.replace(path)
+    os.utime(path, (0, 0))
 
 
 def add_page_field(paragraph) -> None:
@@ -251,7 +274,7 @@ def build_research_form(path: Path) -> None:
     for label in ("1.【开放问题/关键事件】", "2.【补充说明/改进建议】"):
         doc.add_paragraph(label)
         doc.add_paragraph("\n\n")
-    doc.save(path)
+    save_stable(doc, path)
 
 
 def build_analysis_report(path: Path) -> None:
@@ -268,7 +291,7 @@ def build_analysis_report(path: Path) -> None:
     doc.add_paragraph("注：数据来源为《【工作簿名】》“【工作表】”【区域】；数据截止日期【yyyy-mm-dd】。")
     for title in ("五、交叉/对比与质性主题", "六、多源证据互证", "七、主要结论与干预启示", "八、局限"):
         heading(doc, title); doc.add_paragraph("【基于真实数据、记录ID和证据ID生成】")
-    doc.save(path)
+    save_stable(doc, path)
 
 
 def build_lesson_table(path: Path) -> None:
@@ -293,7 +316,7 @@ def build_lesson_table(path: Path) -> None:
         if r == 9:
             set_repeat_header(table.rows[r])
             for cell in table.rows[r].cells: shade(cell)
-    doc.save(path)
+    save_stable(doc, path)
 
 
 def build_lesson_long(path: Path) -> None:
@@ -313,7 +336,7 @@ def build_lesson_long(path: Path) -> None:
         for c, value in enumerate((label, "【教师活动、资源来源】", "【学生行动和成果】", "【评价标准和证据】")): fill_cell(table.rows[r].cells[c], value, center=c == 0)
     for title in ("十、板书设计", "十一、作业设计", "十二、教学反思", "参考文献"):
         heading(doc, title); doc.add_paragraph("【实施后据实填写；引用必须可核验】")
-    doc.save(path)
+    save_stable(doc, path)
 
 
 def build_casebook(path: Path) -> None:
@@ -336,7 +359,7 @@ def build_casebook(path: Path) -> None:
         for c, value in enumerate((f"【环节{r}】", "【填写】", "【填写】", "【证据ID】")): fill_cell(table2.rows[r].cells[c], value, center=c == 0)
     for title in ("六、任务单、作品与评价", "七、结果、反思与改进"):
         heading(doc, title); doc.add_paragraph("【按案例状态填写；开发稿只能写预期，实施稿必须引用真实证据ID】")
-    doc.save(path)
+    save_stable(doc, path)
 
 
 def build_evidence_sheet(path: Path) -> None:
@@ -357,7 +380,7 @@ def build_evidence_sheet(path: Path) -> None:
         doc.add_paragraph()
     heading(doc, "三、原件与授权说明")
     doc.add_paragraph("【登记原件文件名、SHA-256、拍摄来源、变换记录、授权范围和受控原件位置】")
-    doc.save(path)
+    save_stable(doc, path)
 
 
 def build_attention_items(path: Path) -> None:
@@ -449,7 +472,7 @@ def build_attention_items(path: Path) -> None:
     for r in range(1, 5):
         row_values = (str(r), "【下一步行动】", "【需要取得的真实材料】", "【可核验完成标准】", "【责任人/日期/状态】")
         for c, value in enumerate(row_values): fill_cell(actions.rows[r].cells[c], value, center=c == 0, size=9)
-    doc.save(path)
+    save_stable(doc, path)
 
 
 BUILDERS = {

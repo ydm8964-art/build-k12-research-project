@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from datetime import date
@@ -28,11 +29,49 @@ def nested(data: dict, *path: str):
 
 
 def validate_profile(profile: dict) -> list[str]:
-    missing = [".".join(path) for path in REQUIRED_PATHS if nested(profile, *path) in (None, "", [])]
-    related = nested(profile, "teaching", "related_subjects") or []
-    if not isinstance(related, list):
-        missing.append("teaching.related_subjects（必须是数组，可为空）")
-    return missing
+    findings = [".".join(path) for path in REQUIRED_PATHS if nested(profile, *path) in (None, "", [])]
+    teaching = nested(profile, "teaching") or {}
+    grade_classes = teaching.get("grade_classes")
+    if grade_classes not in (None, "", []):
+        if not isinstance(grade_classes, list) or any(not str(value).strip() for value in grade_classes):
+            findings.append("teaching.grade_classes（必须是非空字符串数组）")
+        elif len({str(value).strip() for value in grade_classes}) != len(grade_classes):
+            findings.append("teaching.grade_classes（不能重复）")
+    related = teaching.get("related_subjects", [])
+    if not isinstance(related, list) or any(not str(value).strip() for value in related):
+        findings.append("teaching.related_subjects（必须是字符串数组，可为空）")
+    elif len({str(value).strip() for value in related}) != len(related):
+        findings.append("teaching.related_subjects（不能重复）")
+    elif str(teaching.get("subject", "")).strip() in {str(value).strip() for value in related}:
+        findings.append("teaching.related_subjects（不能重复主学科）")
+    student_count = teaching.get("student_count")
+    if student_count is not None and (not isinstance(student_count, int) or isinstance(student_count, bool) or student_count <= 0):
+        findings.append("teaching.student_count（如填写必须是正整数）")
+    for path in (("problem", "observed_evidence"), ("problem", "existing_practices"), ("problem", "available_resources")):
+        value = nested(profile, *path)
+        if value is not None and (not isinstance(value, list) or any(not str(item).strip() for item in value)):
+            findings.append(".".join(path) + "（如填写必须是字符串数组）")
+    preferred_outputs = nested(profile, "research_preferences", "preferred_outputs")
+    if preferred_outputs is not None and (
+        not isinstance(preferred_outputs, list) or any(not str(value).strip() for value in preferred_outputs)
+    ):
+        findings.append("research_preferences.preferred_outputs（如填写必须是字符串数组）")
+    return list(dict.fromkeys(findings))
+
+
+def has_local_resource(profile: dict) -> bool:
+    problem = profile.get("problem", {})
+    school = profile.get("school", {})
+    text = "；".join(
+        [str(school.get("context", "")), *[str(value) for value in problem.get("available_resources", [])]]
+    )
+    return any(token in text for token in ("乡土", "本地", "地方", "社区", "民族", "非遗", "黔东南", "贵州"))
+
+
+def selection_fingerprint(profile: dict) -> str:
+    core = {key: profile.get(key) for key in ("teacher", "school", "teaching", "problem")}
+    encoded = json.dumps(core, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _coverage(subject: str, related: list[str], include_related: bool) -> list[dict[str, str]]:
@@ -61,13 +100,16 @@ def _candidate(
 ) -> dict:
     teaching = profile["teaching"]
     problem = profile["problem"]
-    related = [str(value) for value in teaching.get("related_subjects", [])]
+    related = [str(value).strip() for value in teaching.get("related_subjects", [])]
     grade_classes = teaching["grade_classes"]
     boundary = "、".join(str(value) for value in grade_classes)
-    base_score = 64
-    remaining = score - base_score
-    innovation_score = max(7, min(10, remaining - 17))
-    operability_score = remaining - innovation_score
+    observed = [value for value in problem.get("observed_evidence", []) if str(value).strip()]
+    resources = [value for value in problem.get("available_resources", []) if str(value).strip()]
+    practices = [value for value in problem.get("existing_practices", []) if str(value).strip()]
+    evidence_score = 10 + min(2, len(observed)) + min(2, len(resources)) + (1 if teaching.get("student_count") else 0)
+    operability_score = {"较低": 19, "适中": 17, "较高": 14}.get(difficulty, 16) + (1 if practices else 0)
+    innovation_score = max(5, min(10, score - 48 - evidence_score - operability_score))
+    actual_score = 48 + evidence_score + operability_score + innovation_score
     return {
         "id": candidate_id,
         "title": title,
@@ -87,13 +129,13 @@ def _candidate(
         "difficulty": difficulty,
         "data_availability": "以现有班级常态教学、原始学习成果和过程记录为主，可在一个课题周期内取得",
         "risks": ["须先取得真实基线，不能预设效果", profile_for_subject(str(teaching["subject"])).special_review],
-        "score": score,
+        "score": actual_score,
         "score_explanation": {
-            "problem_authenticity": 19,
-            "policy_and_standard_fit": 13,
+            "problem_authenticity": 18,
+            "policy_and_standard_fit": 12,
             "research_value": 13,
             "operability": operability_score,
-            "evidence_availability": 14,
+            "evidence_availability": evidence_score,
             "innovation": innovation_score,
             "title_quality": 5,
         },
@@ -116,6 +158,12 @@ def generate(profile: dict, count: int = 6) -> dict:
     s1, s2, s3 = subject_profile.strategies
     evidence = list(subject_profile.primary_evidence)
     outputs = list(subject_profile.expected_outputs)
+    management = subject_profile.key == "management"
+    task_route_title = (
+        f"教学问题导向的{focus}协同改进研究" if management
+        else f"真实任务导向的{stage}{subject_context}{focus}教学研究"
+    )
+    task_route_strategy = f"教学问题诊断＋{s1}" if management else f"真实任务＋{s1}"
     candidates = [
         _candidate("TOPIC-01", f"{stage}{subject_context}{focus}困难诊断与改进研究", "诊断改进型", profile, s1,
                    evidence, outputs, "把真实错因或表现证据转化为分层改进任务", "较低", 88),
@@ -123,8 +171,10 @@ def generate(profile: dict, count: int = 6) -> dict:
                    evidence, outputs, "形成“诊断—行动—反馈—再行动”的校本迭代链", "适中", 91),
         _candidate("TOPIC-03", f"{stage}{subject_context}{focus}形成性评价的实践研究", "评价改进型", profile, s3,
                    evidence, outputs, "把成果量规、过程反馈和学生自评纳入同一证据链", "适中", 89),
-        _candidate("TOPIC-04", f"真实任务导向的{stage}{subject_context}{focus}教学研究", "任务实践型", profile,
-                   f"真实任务＋{s1}", evidence, outputs, "用本校真实情境承载学科任务并保留原始成果", "适中", 87),
+        _candidate("TOPIC-04", task_route_title, "组织改进型" if management else "任务实践型", profile,
+                   task_route_strategy, evidence, outputs,
+                   "把研修行动与课堂应用证据直接连接" if management else "用本校真实情境承载学科任务并保留原始成果",
+                   "适中", 87),
     ]
     if related:
         related_text = "、".join(related)
@@ -143,9 +193,30 @@ def generate(profile: dict, count: int = 6) -> dict:
                        "把教师协同研修与学生学习证据建立直接联系", "较高", 82),
         ])
     else:
+        contextual_title = (
+            f"{focus}与课堂改进协同机制研究"
+            if management
+            else
+            f"乡土资源融入{stage}{subject_context}{focus}的实践研究"
+            if has_local_resource(profile)
+            else f"单元整体视域下{stage}{subject_context}{focus}任务设计研究"
+        )
+        contextual_strategy = (
+            "研修任务＋课堂应用＋反馈改进" if management
+            else f"本地真实资源＋{s2}" if has_local_resource(profile) else f"单元目标统整＋{s2}"
+        )
+        contextual_innovation = (
+            "用课堂应用记录检验研修成果，区分教师发展与学生学习两个证据层面"
+            if management
+            else
+            "把贵州或黔东南可核验资源转化为学科任务，不作装饰性贴标签"
+            if has_local_resource(profile)
+            else "在一个可控单元内统整目标、任务、成果和评价，避免研究范围过大"
+        )
         candidates.extend([
-            _candidate("TOPIC-05", f"乡土资源融入{stage}{subject_context}{focus}的实践研究", "乡土资源型", profile,
-                       f"本地真实资源＋{s2}", evidence, outputs, "把贵州或黔东南可核验资源转化为学科任务，不作装饰性贴标签", "适中", 85),
+            _candidate("TOPIC-05", contextual_title,
+                       "组织协同型" if management else "情境资源型" if has_local_resource(profile) else "单元整体型",
+                       profile, contextual_strategy, evidence, outputs, contextual_innovation, "适中", 85),
             _candidate("TOPIC-06", f"基于学习档案的{stage}{subject_context}{focus}持续改进研究", "学习档案型", profile,
                        "多时点学习档案＋教师反馈", evidence, outputs, "以版本变化和反例记录呈现学习过程", "适中", 83),
             _candidate("TOPIC-07", f"同伴互助视域下{stage}{subject_context}{focus}课堂改进研究", "协同教研型", profile,
@@ -170,6 +241,7 @@ def generate(profile: dict, count: int = 6) -> dict:
             "problem": profile["problem"]["description"],
         },
         "selection_rule": "选择一个研究中心；跨学科选题必须保留主学科并说明每个关联学科的真实功能",
+        "selection_profile_sha256": selection_fingerprint(profile),
         "candidates": ranked,
     }
 

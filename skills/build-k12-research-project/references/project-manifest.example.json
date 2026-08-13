@@ -1,4 +1,5 @@
 {
+  "schema_version": "1.3",
   "project": {
     "title": "示例：真实问题导向的初中某学科学习任务设计研究",
     "leader": "待填写",
@@ -8,6 +9,25 @@
     "stage": "初中",
     "level": "待确认",
     "year": 2026
+  },
+  "project_context": {
+    "region": "贵州省黔东南州",
+    "school_context": "待根据学校真实情况填写",
+    "teacher_title": "待填写",
+    "teacher_role": "课题负责人",
+    "textbook_version": "待核验",
+    "grade_classes": ["待填写班级"],
+    "student_count": null
+  },
+  "problem_context": {
+    "description": "待根据课堂观察、作业或测评证据确认真实问题",
+    "observed_evidence": [],
+    "existing_practices": [],
+    "available_resources": [],
+    "selected_route": "待确认",
+    "selected_core_strategy": "待确认",
+    "selection_id": "待确认",
+    "selection_score": null
   },
   "governance": {
     "current_date": "2026-08-12",
@@ -23,7 +43,9 @@
     "batch_mode": "single-snapshot",
     "unknown_handling": "structured-pending",
     "target_versions": ["working", "submission"],
-    "coverage_exemptions": []
+    "coverage_exemptions": [],
+    "snapshot_id": "snap-example-20260812",
+    "generated_at": "2026-08-12T09:00:00+08:00"
   },
   "submission_requirements": {
     "status": "pending",
@@ -50,6 +72,16 @@
       "is_approved_member": true,
       "affiliation": "待填写",
       "confirmed": false
+    }
+  ],
+  "subject_coverage": [
+    {
+      "subject": "待填写",
+      "role": "main",
+      "research_function": "待根据主学科课程目标确认",
+      "standards_reference": "待核验相应学科课程标准与教材版本",
+      "reviewer": "待填写",
+      "review_status": "pending"
     }
   ],
   "timeline": {

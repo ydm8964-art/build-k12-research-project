@@ -31,6 +31,7 @@ import generate_topic_candidates  # noqa: E402
 import initialize_project_package  # noqa: E402
 import plan_incremental_refresh  # noqa: E402
 import project_workflow  # noqa: E402
+import refresh_package_controls  # noqa: E402
 import register_material_file  # noqa: E402
 import run_project_preflight  # noqa: E402
 import select_topic_and_prepare_intake  # noqa: E402
@@ -228,7 +229,7 @@ class SkillTests(unittest.TestCase):
             root = Path(directory) / "示例材料包"
             manifest_path = initialize_project_package.initialize(intake_path, root, SKILL)
             data = json.loads(manifest_path.read_text(encoding="utf-8"))
-            self.assertEqual(data["schema_version"], "1.2")
+            self.assertEqual(data["schema_version"], "1.3")
             self.assertEqual(len(data["materials"]), 26)
             self.assertTrue(all(item["included_in_batch"] for item in data["materials"]))
             self.assertEqual(data["materials"][0]["status"], "draft")
@@ -293,6 +294,24 @@ class SkillTests(unittest.TestCase):
                 self.assertEqual(item["subject_coverage"][0]["subject"], "数学")
                 self.assertEqual(item["subject_coverage"][0]["role"], "main")
 
+    def test_topic_profile_validation_rejects_duplicate_subjects_and_invalid_counts(self) -> None:
+        profile = json.loads((SKILL / "references" / "teacher-profile.example.json").read_text(encoding="utf-8"))
+        profile["teaching"]["related_subjects"] = ["数学", "数学"]
+        profile["teaching"]["student_count"] = True
+        findings = generate_topic_candidates.validate_profile(profile)
+        self.assertTrue(any("related_subjects" in value for value in findings), findings)
+        self.assertTrue(any("student_count" in value for value in findings), findings)
+
+    def test_local_resource_topic_requires_real_resource_context(self) -> None:
+        profile = json.loads((SKILL / "references" / "teacher-profile.example.json").read_text(encoding="utf-8"))
+        profile["school"]["context"] = "普通城区学校"
+        profile["problem"]["available_resources"] = ["日常作业", "单元检测"]
+        result = generate_topic_candidates.generate(profile, 5)
+        self.assertFalse(any("乡土资源" in item["title"] for item in result["candidates"]))
+        profile["problem"]["available_resources"].append("黔东南乡土数学建模资源")
+        result = generate_topic_candidates.generate(profile, 5)
+        self.assertTrue(any("乡土资源" in item["title"] for item in result["candidates"]))
+
     def test_cross_subject_candidates_register_each_real_subject(self) -> None:
         profile = json.loads((SKILL / "references" / "teacher-profile.example.json").read_text(encoding="utf-8"))
         profile["teaching"].update({"subject": "地理", "related_subjects": ["信息科技"]})
@@ -333,6 +352,18 @@ class SkillTests(unittest.TestCase):
         changed = select_topic_and_prepare_intake.prepare(profile, topics, "TOPIC-02", "真实问题导向的初中数学函数建模任务设计研究")
         self.assertTrue(changed["title_modified"])
         self.assertEqual(changed["project_intake"]["project"]["title"], "真实问题导向的初中数学函数建模任务设计研究")
+        intake = selected["project_intake"]
+        self.assertEqual(intake["project_context"]["grade_classes"], ["八年级1班", "八年级2班"])
+        self.assertEqual(intake["problem_context"]["observed_evidence"], profile["problem"]["observed_evidence"])
+        self.assertEqual([item["name"] for item in intake["commitments"]], ["最终研究报告", "教学案例集", "任务单", "评价量规"])
+
+        with self.assertRaisesRegex(ValueError, "偏离所选候选方向"):
+            select_topic_and_prepare_intake.prepare(profile, topics, "TOPIC-02", "小学生劳动习惯培养研究")
+
+        changed_profile = copy.deepcopy(profile)
+        changed_profile["problem"]["description"] = "完全不同的新问题"
+        with self.assertRaisesRegex(ValueError, "重新生成候选题"):
+            select_topic_and_prepare_intake.prepare(changed_profile, topics, "TOPIC-02")
 
         del profile["timeline"]["completion"]
         blocked = select_topic_and_prepare_intake.prepare(profile, topics, "TOPIC-02")
@@ -352,6 +383,18 @@ class SkillTests(unittest.TestCase):
         self.assertIn("当年官方模板或用户指定同类模板", application["truth_blockers_for_finalization"])
         self.assertIn("真实原始数据或实施记录", final_report["truth_blockers_for_finalization"])
         self.assertTrue(all(job["source_manifest_fields"] and job["completion_gate"] for job in plan["jobs"]))
+        self.assertTrue(plan["waiting_jobs"])
+
+    def test_verified_material_is_not_treated_as_complete_and_waiting_is_explained(self) -> None:
+        intake = json.loads((SKILL / "references" / "project-intake.example.json").read_text(encoding="utf-8"))
+        manifest = initialize_project_package.build_manifest(intake)
+        by_id = {item["id"]: item for item in manifest["materials"]}
+        by_id["M00"].update(status="verified", file_path="attention.docx")
+        plan = build_material_generation_plan.build(manifest)
+        self.assertIn("JOB-M00", plan["next_jobs"])
+        opening = next(job for job in plan["jobs"] if job["material_id"] == "M03")
+        self.assertEqual(opening["execution_state"], "waiting-dependency")
+        self.assertIn("M01", opening["waiting_for_material_ids"])
 
     def test_end_to_end_workflow_reaches_material_queue(self) -> None:
         profile_path = SKILL / "references" / "teacher-profile.example.json"
@@ -369,6 +412,38 @@ class SkillTests(unittest.TestCase):
             self.assertIn("JOB-M00", plan["next_jobs"])
             self.assertIn("JOB-M01", plan["blocked_jobs"])
             self.assertNotIn("JOB-M01", plan["next_jobs"])
+            self.assertIn("JOB-M03", plan["waiting_jobs"])
+
+    def test_pending_truth_status_can_be_registered_and_controls_refreshed(self) -> None:
+        intake_path = SKILL / "references" / "project-intake.example.json"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "package"
+            manifest_path = initialize_project_package.initialize(intake_path, root, SKILL)
+            data = json.loads(manifest_path.read_text(encoding="utf-8"))
+            material = next(item for item in data["materials"] if item["id"] == "M11")
+            target = root / material["planned_file_path"]
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes((SKILL / "assets" / "templates" / "analysis-report.docx").read_bytes())
+            register_material_file.register(manifest_path, "M11", target, "pending-data", None, None)
+            registered = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(next(item for item in registered["materials"] if item["id"] == "M11")["status"], "pending-data")
+            for dependency_id in ("M09", "M10"):
+                dependency = next(item for item in registered["materials"] if item["id"] == dependency_id)
+                dependency.update(status="draft", file_path=dependency["planned_file_path"], sha256="0" * 64)
+            plan = build_material_generation_plan.build(registered)
+            job = next(item for item in plan["jobs"] if item["material_id"] == "M11")
+            self.assertEqual(job["execution_state"], "waiting-truth-input")
+            self.assertNotIn("JOB-M11", plan["next_jobs"])
+            registered["samples"][0]["actual_n"] = registered["samples"][0]["planned_n"]
+            registered["evidence"][0].update(
+                status="collected", collected_date="2026-08-12", source_file="原始数据/问卷.xlsx",
+                custody_record={"owner": "示例教师", "locator": "校内加密盘", "verified_at": "2026-08-12"},
+            )
+            self.assertTrue(build_material_generation_plan.truth_inputs_ready(registered, "pending-data"))
+            result = refresh_package_controls.refresh(manifest_path)
+            self.assertTrue(Path(result["attention"]).is_file())
+            refreshed = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(next(item for item in refreshed["materials"] if item["id"] == "M00")["status"], "draft")
 
     def test_material_dependency_cycles_are_rejected(self) -> None:
         data = copy.deepcopy(self.example)
@@ -476,6 +551,21 @@ class SkillTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_docx_template_builder_is_reproducible(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            first = Path(directory) / "first"
+            second = Path(directory) / "second"
+            for target in (first, second):
+                result = subprocess.run(
+                    [sys.executable, str(SCRIPTS / "build_generic_docx_templates.py"), str(target)],
+                    text=True, capture_output=True, check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(
+                {path.name: path.read_bytes() for path in first.glob("*.docx")},
+                {path.name: path.read_bytes() for path in second.glob("*.docx")},
+            )
 
     def test_official_exact_detects_table_geometry_change(self) -> None:
         from docx import Document
