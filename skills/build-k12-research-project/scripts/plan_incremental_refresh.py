@@ -10,6 +10,8 @@ from pathlib import Path
 
 FIELD_IMPACT = {
     "project": {"*"},
+    "project_context": {"*"},
+    "problem_context": {"*"},
     "governance": {"attention-items", "index", "analysis-report", "final-report", "closing-application"},
     "submission_requirements": {"application", "anonymous-form", "opening", "closing-application", "index", "attention-items"},
     "contributors": {"*"},
@@ -57,7 +59,7 @@ def compare(old: dict, new: dict) -> dict:
                 }
             )
     return {
-        "schema_version": "1.2",
+        "schema_version": "1.3",
         "old_snapshot_id": old_snapshot or None,
         "new_snapshot_id": new_generation.get("snapshot_id"),
         "changed_fields": changed_fields,

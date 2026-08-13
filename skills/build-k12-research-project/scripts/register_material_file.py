@@ -14,6 +14,7 @@ from pathlib import Path
 from validate_project_manifest import QA_KEYS, validate
 
 READY = {"ready", "submitted", "archived"}
+PENDING_TRUTH = {"pending-data", "pending-photo", "pending-signature"}
 
 
 def sha256(path: Path) -> str:
@@ -48,6 +49,13 @@ def register(
     suffix = actual.suffix.lower().lstrip(".")
     if suffix != str(material.get("output_format", "")).lower():
         raise ValueError(f"文件扩展名.{suffix}与output_format={material.get('output_format')}不一致")
+    if status in PENDING_TRUTH:
+        expected = {
+            "pending-data": {"data"}, "pending-photo": {"photo"}, "pending-signature": set(),
+        }[status]
+        applicable = {key for key, value in material.get("qa", {}).items() if value != "not-applicable"}
+        if expected and not expected <= applicable:
+            raise ValueError(f"材料{material_id}不适用状态{status}；相应QA门槛未启用")
 
     report: dict = {}
     if qa_report_path:
@@ -98,7 +106,11 @@ def main() -> int:
     parser.add_argument("manifest", type=Path)
     parser.add_argument("--material-id", required=True)
     parser.add_argument("--file", type=Path, required=True)
-    parser.add_argument("--status", choices=("draft", "verified", "ready", "submitted", "archived"), default="draft")
+    parser.add_argument(
+        "--status",
+        choices=("draft", "pending-data", "pending-photo", "pending-signature", "verified", "ready", "submitted", "archived"),
+        default="draft",
+    )
     parser.add_argument("--qa-report", type=Path)
     parser.add_argument("--data-cutoff")
     args = parser.parse_args()

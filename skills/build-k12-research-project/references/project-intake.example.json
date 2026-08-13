@@ -9,6 +9,21 @@
     "level": "州级",
     "year": 2026
   },
+  "project_context": {
+    "region": "贵州省黔东南州",
+    "school_context": "县域初中，常态班级学生学习差异较明显",
+    "teacher_title": "一级教师",
+    "teacher_role": "初中地理教师",
+    "textbook_version": "现行初中地理教材，正式材料须核验出版社、年级和册次",
+    "grade_classes": ["八年级1班", "八年级2班"],
+    "student_count": 100
+  },
+  "problem_context": {
+    "description": "学生在区域认知任务中存在只描述位置、不使用地图和资料证据解释区域差异的问题",
+    "observed_evidence": ["课堂任务单中证据引用不充分", "学生口头解释常停留在位置描述"],
+    "existing_practices": ["已使用地图读图任务和小组讨论，但任务递进与评价反馈不足"],
+    "available_resources": ["两班任务单", "课堂观察记录", "校内数字地图工具"]
+  },
   "governance": {
     "current_date": "2026-08-13",
     "project_status": "ongoing",

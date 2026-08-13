@@ -97,7 +97,7 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
     schema_version = str(data.get("schema_version", "1.1"))
-    if schema_version not in {"1.1", "1.2"}:
+    if schema_version not in {"1.1", "1.2", "1.3"}:
         errors.append(f"schema_version不受支持：{schema_version!r}")
     project = data.get("project")
     if not isinstance(project, dict):
@@ -111,6 +111,34 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
         errors.append("project.related_subjects如填写必须是非空字符串数组")
     elif str(project.get("subject", "")) in {str(value) for value in related_subjects}:
         warnings.append("project.related_subjects重复包含主学科，请去重")
+
+    project_context = data.get("project_context", {})
+    problem_context = data.get("problem_context", {})
+    if schema_version == "1.3":
+        if not isinstance(project_context, dict):
+            errors.append("project_context 必须是对象")
+            project_context = {}
+        if not isinstance(problem_context, dict):
+            errors.append("problem_context 必须是对象")
+            problem_context = {}
+        grade_classes = project_context.get("grade_classes", [])
+        if not isinstance(grade_classes, list) or not grade_classes or any(not str(value).strip() for value in grade_classes):
+            errors.append("project_context.grade_classes 必须是非空班级数组")
+        elif len({str(value).strip() for value in grade_classes}) != len(grade_classes):
+            errors.append("project_context.grade_classes 不能重复")
+        student_count = project_context.get("student_count")
+        if student_count is not None and (
+            not isinstance(student_count, int) or isinstance(student_count, bool) or student_count <= 0
+        ):
+            errors.append("project_context.student_count 如填写必须是正整数")
+        if not str(project_context.get("region", "")).strip():
+            errors.append("project_context.region 不能为空")
+        if not str(problem_context.get("description", "")).strip():
+            errors.append("problem_context.description 不能为空")
+        for key in ("observed_evidence", "existing_practices", "available_resources"):
+            values = problem_context.get(key, [])
+            if not isinstance(values, list) or any(not str(value).strip() for value in values):
+                errors.append(f"problem_context.{key} 必须是字符串数组；未知时使用空数组")
 
     governance = data.get("governance", {})
     if not isinstance(governance, dict):
@@ -135,7 +163,7 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
         errors.append("generation_contract.batch_mode 缺少有效值")
     if generation.get("unknown_handling") not in UNKNOWN_HANDLING:
         errors.append("generation_contract.unknown_handling 缺少有效值")
-    if schema_version == "1.2" or generation.get("batch_mode") == "incremental":
+    if schema_version in {"1.2", "1.3"} or generation.get("batch_mode") == "incremental":
         if not str(generation.get("snapshot_id", "")).strip():
             errors.append("generation_contract.snapshot_id 不能为空")
         generated_at = str(generation.get("generated_at", "")).strip()
@@ -209,7 +237,7 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
             errors.append(f"contributors[{index}].is_approved_member 必须是布尔值")
 
     subject_coverage = data.get("subject_coverage", [])
-    if schema_version == "1.2" and (not isinstance(subject_coverage, list) or not subject_coverage):
+    if schema_version in {"1.2", "1.3"} and (not isinstance(subject_coverage, list) or not subject_coverage):
         errors.append("subject_coverage 至少登记主学科的研究功能、课标范围和复核责任")
         subject_coverage = []
     elif not isinstance(subject_coverage, list):

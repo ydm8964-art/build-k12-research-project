@@ -57,6 +57,8 @@ python scripts/project_workflow.py start --profile teacher-profile.json --root t
 
 把`topic-candidates.md`中的5—8项候选直接展示给用户；允许用户回复候选ID或提出修改。脚本输出是确定性底稿，Agent仍须检查题目是否自然、是否贴合用户原话、是否使用当年政策/课标的准确名称；不得为提高分数虚构政策依据。
 
+选题评分只能依据已登记的基线证据、已有做法、可用资源、班级和学科条件动态计算。没有乡土/社区/地方资源依据时不得默认生成“乡土资源融入”题目；选题后若教师、学校、学科、班级或真实问题发生变化，重新生成候选题，禁止沿用旧候选逻辑。
+
 题目应同时包含研究对象或情境、核心变量或策略、研究内容/目标，避免空泛口号、范围过大、因果承诺过强和多个研究中心并列。
 
 ## 阶段二：建立唯一项目主清单
@@ -102,6 +104,8 @@ python scripts/project_workflow.py select --root topic-workspace --topic-id TOPI
 
 若返回`awaiting-project-details`，只追问清单中的阻断字段；不要重复询问已经记录的信息，也不要臆造管理单位、年度模板、申报日或完成日。返回`ready-to-initialize`后运行`project_workflow.py initialize`，把已选题目、问题、策略、学科覆盖和时间统一冻结到主清单。
 
+冻结时把地区/校情、职称职务、教材版本、年级班级、人数、问题表现、已有证据、已有做法、可用资源和选题依据写入`project_context/problem_context`；把用户偏好的每项成果分别转成`commitments`，不得只保留最终研究报告。
+
 用户要求一次性生成时，只设置一个题目确认节点。确认后冻结同一主清单快照，按`application-kit/implementation-kit/full-lifecycle-kit/closing-kit`整批生成；已登记的信息不重复询问。未来事实缺失时仍可生成实施工具和结果材料骨架，但对应文件必须保持`pending-data/pending-photo/pending-signature`，并把整套状态标为`full-lifecycle-scaffold`，不能伪称结题终稿。
 
 题目确认且一次采集信息完整后，优先以[project-intake.example.json](references/project-intake.example.json)为字段样例创建独立输入JSON，再运行初始化器。初始化器固定创建26项生命周期角色、标准文件夹、项目主清单、根目录注意事项、交付索引和数据工作簿草稿，不覆盖已有控制文件：
@@ -119,12 +123,12 @@ python scripts/initialize_project_package.py --intake project-intake.json --root
 按以下闭环持续执行，直到当前真实性阶段内所有可完成材料已经制作，不能生成终稿的材料也已有结构完整的工作稿和明确待办：
 
 1. 运行`python scripts/project_workflow.py plan --root topic-workspace`刷新任务队列；
-2. 只处理`material-generation-plan.json`中的`next_jobs`；`blocked_jobs`先补官方模板或真实输入；
+2. 只处理`material-generation-plan.json`中的`next_jobs`；`blocked_jobs`先补官方模板或真实输入；`waiting_jobs`读取各任务的`waiting_for_material_ids`，不得把等待依赖误报为无任务；
 3. 从每个任务的`source_manifest_fields`读取唯一事实，按`content_contract`写正文；
 4. 使用登记的官方模板或对应通用母版，完成内容、格式、渲染、隐私及适用的数据/照片QA；
-5. 用`register_material_file.py`登记文件、哈希和真实状态，再刷新任务队列；
+5. 用`register_material_file.py`登记文件、哈希和真实状态；结果骨架可以登记`pending-data/pending-photo/pending-signature`，只有完整QA通过后才登记`ready`；
 6. 上游事实变化时先更新主清单快照并运行`plan_incremental_refresh.py`，不要在下游文件中零散修改；
-7. 最后刷新注意事项、工作簿、交付索引并运行一键预检。
+7. 每一批文件登记后运行`refresh_package_controls.py`重生注意事项和交付索引，再刷新工作簿；完成QA并重新登记两个控制文件后运行一键预检。
 
 单个Agent执行整套生成时，要在同一任务中主动重复以上闭环，不要每写一份材料都重新向用户确认。只有遇到会改变研究事实、官方格式或真实性状态的阻断项时才暂停。
 

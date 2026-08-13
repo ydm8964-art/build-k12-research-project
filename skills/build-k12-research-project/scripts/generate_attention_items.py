@@ -293,9 +293,18 @@ def gather_issues(data: dict, as_of: date) -> list[Issue]:
     delivery_state = str(generation.get("delivery_state", "full-lifecycle-scaffold"))
     truth_state = str(generation.get("truth_state", "planning"))
     project = data.get("project", {}) if isinstance(data.get("project"), dict) else {}
+    project_context = data.get("project_context", {}) if isinstance(data.get("project_context"), dict) else {}
+    problem_context = data.get("problem_context", {}) if isinstance(data.get("problem_context"), dict) else {}
     for key, label in (("title", "规范题目"), ("leader", "负责人"), ("school", "学校全称"), ("subject", "学科"), ("stage", "学段")):
         if text_missing(project.get(key)):
             issues.append(Issue("当前阻断", "项目身份", f"{label}尚未确认", "该字段会同步影响所有材料和报送资格", f"由课题负责人核对正式写法并更新项目主清单；完成日期不晚于{as_of.isoformat()}", "全部材料；完成标准：主清单中只有一个正式值"))
+
+    if text_missing(project_context.get("textbook_version")):
+        issues.append(Issue("必须补充", "教材与课标", "教材版本尚未核验", "工具、课例和题目内容可能与实际教材范围错位", "核对实际使用教材的学段、年级、册次、出版社和版本；同步登记课程标准条目/页码", "主清单、工具、课例和学科复核；完成标准：textbook_version为可核验正式值"))
+    if not problem_context.get("observed_evidence"):
+        issues.append(Issue("必须补充", "问题基线", "真实教学问题尚无已登记的观察证据", "申请书中的问题陈述可能停留在主观判断", "补充作业、测评、课堂观察、访谈或作品中的真实表现，只陈述已发生事实", "申请书、开题和诊断工具；完成标准：observed_evidence至少一项且可追溯"))
+    if not problem_context.get("existing_practices"):
+        issues.append(Issue("建议增强", "前期基础", "尚未登记已有做法及其局限", "无法说明课题的改进起点和创新边界", "登记已经尝试的教学做法、使用范围、效果印象和未解决问题，不把计划写成既有成果", "申请书前期基础与创新点"))
 
     requirements = data.get("submission_requirements", {}) if isinstance(data.get("submission_requirements"), dict) else {}
     req_status = str(requirements.get("status", "pending"))
