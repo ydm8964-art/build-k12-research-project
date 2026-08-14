@@ -55,26 +55,10 @@ info.getRange("H4:H13").values = [
   [problemContext.selected_core_strategy || "[待确认核心策略]"],
   [projectContext.teacher_title || projectContext.teacher_role || "[待确认教师信息]"],
 ];
-info.getRange("G3:H3").values = [["项目背景", "内容"]];
 info.getRange("G4:G13").values = [
   ["地区"], ["学校情境"], ["教材版本"], ["真实问题"], ["已有证据"],
   ["已有做法"], ["可用资源"], ["选题路线"], ["核心策略"], ["教师职称/职务"],
 ];
-info.getRange("G3:H3").format = {
-  fill: "#1F4E78", font: { bold: true, color: "#FFFFFF" },
-  horizontalAlignment: "center", verticalAlignment: "center", wrapText: true,
-};
-info.getRange("G4:G13").format = {
-  fill: "#D9EAF7", font: { bold: true, color: "#1F2937" },
-  verticalAlignment: "center", wrapText: true,
-};
-info.getRange("H4:H13").format = {
-  fill: "#FFF7D6", font: { color: "#1F2937" },
-  verticalAlignment: "center", wrapText: true,
-};
-info.getRange("G3:H13").format.borders = { preset: "all", style: "thin", color: "#B7C9D6" };
-info.getRange("G3:G13").format.columnWidth = 15;
-info.getRange("H3:H13").format.columnWidth = 38;
 info.getRange("C4:C13").values = [
   ["已核验"], ["已核验"], ["已核验"], ["已核验"], ["已核验"],
   [governance.data_cutoff ? "已核验" : "待确认"], ["工作版"], ["待确认"], ["工作版"],
@@ -127,7 +111,11 @@ const output = await SpreadsheetFile.exportXlsx(workbook);
 await output.save(outputPath);
 
 const normalizer = fileURLToPath(new URL("./normalize_xlsx_views.py", import.meta.url));
-const normalized = spawnSync(process.env.PYTHON || "python3", [normalizer, outputPath, "--freeze-rows", "3"], { encoding: "utf8" });
+const normalized = spawnSync(
+  process.env.PYTHON || "python3",
+  [normalizer, outputPath, "--freeze-rows", "3", "--default-font", "Microsoft YaHei"],
+  { encoding: "utf8" },
+);
 if (normalized.status !== 0) {
   throw new Error(`XLSX冻结窗格兼容处理失败：${normalized.stderr || normalized.stdout || "未知错误"}`);
 }

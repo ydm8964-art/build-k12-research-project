@@ -14,6 +14,7 @@ const qaIndex = args.indexOf("--qa-dir");
 const qaDir = qaIndex >= 0 && args[qaIndex + 1] ? path.resolve(args[qaIndex + 1]) : null;
 
 const workbook = Workbook.create();
+const WORKBOOK_FONT = "Microsoft YaHei";
 const COLORS = {
   navy: "#1F4E78",
   blue: "#D9EAF7",
@@ -31,17 +32,22 @@ function createSheet(name, title, description, headers, widths) {
   sheet.getRange("A2").values = [[description]];
   sheet.getRangeByIndexes(0, 0, 1, headers.length).format = {
     fill: COLORS.navy,
-    font: { bold: true, color: COLORS.white, size: 14 },
+    font: { name: WORKBOOK_FONT, bold: true, color: COLORS.white, size: 14 },
+    rowHeight: 26,
+    verticalAlignment: "center",
   };
   sheet.getRangeByIndexes(1, 0, 1, headers.length).format = {
     fill: COLORS.blue,
-    font: { color: "#1F1F1F", size: 10 },
+    font: { name: WORKBOOK_FONT, color: "#1F1F1F", size: 10 },
+    rowHeight: 52,
     wrapText: true,
+    verticalAlignment: "center",
   };
   sheet.getRangeByIndexes(2, 0, 1, headers.length).values = [headers];
   sheet.getRangeByIndexes(2, 0, 1, headers.length).format = {
     fill: COLORS.navy,
-    font: { bold: true, color: COLORS.white },
+    font: { name: WORKBOOK_FONT, bold: true, color: COLORS.white, size: 11 },
+    rowHeight: 28,
     wrapText: true,
     horizontalAlignment: "center",
     verticalAlignment: "center",
@@ -52,6 +58,8 @@ function createSheet(name, title, description, headers, widths) {
   });
   sheet.getRangeByIndexes(3, 0, 30, headers.length).format = {
     fill: COLORS.input,
+    font: { name: WORKBOOK_FONT, size: 11 },
+    rowHeight: 24,
     verticalAlignment: "top",
     wrapText: true,
     borders: { preset: "all", style: "thin", color: COLORS.border },
@@ -68,8 +76,8 @@ const info = createSheet(
   "项目说明",
   "课题研究数据工作簿（通用结构母版）",
   "本文件不是官方申报附件。黄色为人工录入，绿色为公式/引用；真实数据、政策信息和署名必须核验后填写。",
-  ["项目字段", "内容", "核验状态", "来源/责任人", "最后更新", "说明"],
-  [24, 42, 16, 22, 16, 42],
+  ["项目字段", "内容", "核验状态", "来源/责任人", "最后更新", "说明", "项目背景", "内容"],
+  [24, 42, 16, 22, 16, 42, 15, 38],
 );
 info.getRange("A4:F14").values = [
   ["课题名称", "[填写]", "未核验", "负责人", "", "与申请书、开题、结题材料完全一致"],
@@ -86,7 +94,18 @@ info.getRange("A4:F14").values = [
 ];
 info.getRange("C4:C14").dataValidation = { rule: { type: "list", values: ["未核验", "待确认", "待核验", "工作版", "已说明", "已核验"] } };
 info.getRange("E4:E14").format.numberFormat = "yyyy-mm-dd";
-addTable(info, "ProjectInfo", "F", 14);
+info.getRange("G4:G13").values = [
+  ["地区"], ["学校情境"], ["教材版本"], ["真实问题"], ["已有证据"],
+  ["已有做法"], ["可用资源"], ["选题路线"], ["核心策略"], ["教师职称/职务"],
+];
+info.getRange("G4:G13").format = {
+  fill: COLORS.blue,
+  font: { name: WORKBOOK_FONT, size: 11, bold: true, color: "#1F2937" },
+  verticalAlignment: "center",
+  wrapText: true,
+  borders: { preset: "all", style: "thin", color: COLORS.border },
+};
+addTable(info, "ProjectInfo", "H", 14);
 
 const codebook = createSheet(
   "变量编码",
@@ -236,7 +255,11 @@ await xlsx.save(outputPath);
 await fs.rm(`${outputPath}.inspect.ndjson`, { force: true });
 const normalizer = fileURLToPath(new URL("./normalize_xlsx_views.py", import.meta.url));
 const python = process.env.PYTHON || "python3";
-const normalized = spawnSync(python, [normalizer, outputPath, "--freeze-rows", "3"], { encoding: "utf8" });
+const normalized = spawnSync(
+  python,
+  [normalizer, outputPath, "--freeze-rows", "3", "--default-font", WORKBOOK_FONT],
+  { encoding: "utf8" },
+);
 if (normalized.status !== 0) {
   throw new Error(`XLSX冻结窗格兼容处理失败：${normalized.stderr || normalized.stdout || "未知错误"}`);
 }

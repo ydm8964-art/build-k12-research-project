@@ -29,7 +29,7 @@ description: 为贵州省及黔东南州中小学教师规划、申报、实施�
 - 用户要求沿用本地参考材料的方法、栏目或成套形态：读 [source-derived-blueprints.md](references/source-derived-blueprints.md)。该文件只提供结构母版，不允许复制其中的项目事实、人员、日期或数据。
 - 用户要求“一次性生成全套”或只提供一次基本信息后批量生成：读 [one-shot-generation-protocol.md](references/one-shot-generation-protocol.md)，先确定成套范围和真实性阶段，再整批生成。
 - 需要判断用户提供的本地历史材料包中哪类材料可作格式母版、结构参考或仅作内容示例：读 [reference-material-catalog.md](references/reference-material-catalog.md)，不得把有缺陷的旧文件误设为官方精确模板。
-- 生成或审核Word、Word表格、封面、目录、成果汇编：读 [format-and-tables.md](references/format-and-tables.md)。
+- 生成或审核Word、Word表格、封面、目录、成果汇编：读 [format-and-tables.md](references/format-and-tables.md)和[26项材料固定版式合同](references/material-format-contracts.md)；机器执行源为`references/material-format-contracts.json`。
 - 生成问卷数据、访谈编码、课堂观察、统计分析、证据索引或材料进度电子表格：读 [spreadsheet-standards.md](references/spreadsheet-standards.md)。
 - 涉及匿名评审、个人信息、学生数据、知情同意、研究工具质量、效果结论、案例安全、引用核验、版本管理或最终交付：读 [research-integrity-and-delivery.md](references/research-integrity-and-delivery.md)。
 - 涉及真实课堂照片、活动照片、学生作品照片、教研现场、照片证据册或Word插图位置：读 [photo-evidence-and-placement.md](references/photo-evidence-and-placement.md)。照片只能来自用户/学校真实提供，不得生成或借用图片冒充研究过程。
@@ -125,7 +125,7 @@ python scripts/initialize_project_package.py --intake project-intake.json --root
 1. 运行`python scripts/project_workflow.py plan --root topic-workspace`刷新任务队列；
 2. 只处理`material-generation-plan.json`中的`next_jobs`；`blocked_jobs`先补官方模板或真实输入；`waiting_jobs`读取各任务的`waiting_for_material_ids`，不得把等待依赖误报为无任务；
 3. 从每个任务的`source_manifest_fields`读取唯一事实，按`content_contract`写正文；
-4. 使用登记的官方模板或对应通用母版，完成内容、格式、渲染、隐私及适用的数据/照片QA；
+4. 使用登记的官方模板或对应通用母版，按材料ID应用固定版式合同，完成内容、字体字号与段落、结构格式、渲染、隐私及适用的数据/照片QA；
 5. 用`register_material_file.py`登记文件、哈希和真实状态；结果骨架可以登记`pending-data/pending-photo/pending-signature`，只有完整QA通过后才登记`ready`；
 6. 上游事实变化时先更新主清单快照并运行`plan_incremental_refresh.py`，不要在下游文件中零散修改；
 7. 每一批文件登记后运行`refresh_package_controls.py`重生注意事项和交付索引，再刷新工作簿；完成QA并重新登记两个控制文件后运行一键预检。
@@ -160,19 +160,21 @@ python scripts/initialize_project_package.py --intake project-intake.json --root
 
 优先使用当年官方 Word/Excel/PDF 附件作为版式母版，保留栏目、顺序、页数限制和签章位置。没有官方格式时，采用规范中文教育科研文档格式，但明确标注为通用稿。
 
-在写正文前为每份材料确定`format_profile`、权威模板和版式合同。格式优先级为：当年官方附件 > 用户指定的同类模板 > 本Skill格式合同 > 通用格式。官方模板使用工作副本原位填写，不从空白文档重建，不用美化版式覆盖官方结构。
+在写正文前为每份材料确定`format_profile`、唯一`format_contract_id`、权威模板和版式合同。M00—M25的绑定、每级字体字号、首行缩进、行距、段前段后、页面和表格硬值见`references/material-format-contracts.json`，不得由Agent临时发挥。格式优先级为：当年官方附件 > 用户指定的同类模板 > 本Skill格式合同 > 通用格式。官方模板使用工作副本原位填写，不从空白文档重建，不用美化版式覆盖官方结构。
 
 没有官方或用户指定模板的非官方材料，从`assets/templates/`中对应的通用结构母版复制工作件：`research-form.docx`、`analysis-report.docx`、`lesson-table.docx`、`lesson-long.docx`、`casebook.docx`、`evidence-sheet.docx`或`attention-items.docx`。这些母版只提供已验证的纸张、表格几何、分页和题注结构；年度字体、栏目名称、真实内容和签章要求仍须按版式合同覆盖。`official-exact`材料严禁改用这些通用母版。
 
 每次生成材料包时，运行`scripts/generate_attention_items.py`从项目主清单生成注意事项文件。把它放在材料包根目录并以`00_`开头；内容至少包含状态快照、阻断/必须/阶段事项、真实照片清单、其他真实原件清单、学科专项真实性与安全核验、时间逻辑检查、增强建议和教师操作顺序。该文件默认仅供负责人内部使用，不冒充官方附件，也不因列出缺件而把缺件写成已经取得。
 
-制作 DOCX 时调用文档制作能力；若参考文件控制版式，先提炼模板结构再从参考副本生成。完成后运行`audit_docx_format.py`并渲染逐页检查：封面、目录、标题层级、表格宽度、跨页表头、页眉页脚、页码、图片、空白页和签章区。更新目录域或明确提醒用户在 Word 中更新目录。输出文件名应包含序号、材料名称和版本/日期。
+制作非官方DOCX时调用文档制作能力；若参考文件控制版式，先提炼模板结构再从参考副本生成。正文完成后必须依次运行`resolve_material_format.py`、`apply_docx_format_contract.py`、`audit_docx_style_contract.py`和`audit_docx_format.py`，然后渲染逐页检查：封面、目录、标题层级、字体字号、首行缩进、行距、段前段后、表格宽度、跨页表头、页眉页脚、页码、图片、空白页和签章区。任何一项失败都不得标记`ready`。更新目录域或明确提醒用户在 Word 中更新目录。输出文件名应包含序号、材料名称和版本/日期。
+
+`official-exact`材料禁止运行通用套版脚本；必须以实际官方原件作为`--reference`，同时执行结构审计和字体段落合同审计。若没有当年模板，保持`blocked-template`，不得用通用字号猜测。
 
 每份DOCX还要执行内容完整性审计。匿名/公开版出现身份证号、手机号或邮箱属于阻断错误；最终版的错字、编号跳号、长段重复、空占位、无证据的强结论和“声称有照片但文档无图”必须处理。官方模板或项目确需保留的身份字段，只能放在`submission`版本。
 
 插入真实照片时，先登记原件和授权，再制作派生副本并插入。优先内嵌图片，保持长宽比；每张证据照片必须有连续图号、规范图题、照片ID、真实日期/活动、正文交叉引用和有意义的替代文本。匿名/公开版还要打码或裁切可识别人物并清理图片/DOCX元数据。图片修改或增删后重新编号、更新交叉引用并渲染逐页检查。
 
-制作 XLSX 时调用电子表格能力，按“项目说明—变量编码—原始数据—清理/编码—统计分析—图表结果—证据索引—照片登记—材料进度”分层。无官方电子表格时，直接复制`assets/templates/project-data-workbook.xlsx`作为结构母版；如需重建，先加载Codex工作区依赖，把`build_generic_xlsx_template.mjs`和`normalize_xlsx_views.py`复制到同一可写工作目录，并建立指向加载器所返回`node_modules`的符号链接，再用返回的Node运行生成脚本，不得猜测或导入运行时内部路径。兼容脚本只补足导出器未物化的标准冻结窗格。它不是官方报送表，不得替代当年附件。原始数据与分析分开，派生值使用公式，设置数据验证、筛选、冻结窗格和正确数据类型。导出前检查关键区域、公式错误并渲染查看每个工作表。
+制作 XLSX 时调用电子表格能力，按“项目说明—变量编码—原始数据—清理/编码—统计分析—图表结果—证据索引—照片登记—材料进度”分层。无官方电子表格时，直接复制`assets/templates/project-data-workbook.xlsx`作为固定格式母版；如需重建，先加载Codex工作区依赖，把`build_generic_xlsx_template.mjs`和`normalize_xlsx_views.py`复制到同一可写工作目录，并建立指向加载器所返回`node_modules`的符号链接，再用返回的Node运行生成脚本，不得猜测或导入运行时内部路径。兼容脚本补足标准冻结窗格和默认中文字体。它不是官方报送表，不得替代当年附件。原始数据与分析分开，派生值使用公式，设置数据验证、筛选、冻结窗格和正确数据类型。导出前运行`audit_xlsx_structure.py`和`audit_xlsx_style_contract.py`，检查关键区域、公式错误并渲染查看全部9张工作表。
 
 初始化后不要把空白工作簿直接交付。把`populate_project_workbook.mjs`与`normalize_xlsx_views.py`复制到同一可写运行目录，使用工作区依赖提供的Node和`node_modules`，从同一主清单写入项目说明、证据、照片和26项材料进度，并用`--qa-dir`渲染全部9张工作表；输出仍是草稿，真实数据区不自动伪填。
 
@@ -196,6 +198,7 @@ Word与Excel必须使用同一项目主清单、变量编码和统计口径。Wo
 - 案例集目录页码是否已更新，目录宣称的案例是否都在正文中；
 - 学生层面、教师层面和课堂层面的效果结论是否分别有对应证据。
 - 每份材料是否已确定并通过相应`format_profile`，官方表格是否与原模板结构一致；
+- 每份材料是否绑定正确`format_contract_id`，标题层级、正文、列表、图表题和表格文字是否逐项通过固定字体字号、缩进、行距和段前段后审计；
 - Word表格是否明确列宽、重复表头、合理内边距且无固定行高截字；
 - XLSX是否分离原始数据与分析、公式无错误、字段类型正确并完成全工作表视觉检查。
 - 申请—开题—中期—结题是否形成递进，而非段落机械重复；最终成果是否逐项兑现申请承诺；
@@ -229,6 +232,15 @@ python scripts/validate_project_manifest.py project-manifest.json
 ```bash
 python scripts/audit_docx_format.py material.docx --profile analysis-report --final
 python scripts/audit_docx_format.py filled-official.docx --profile official-exact --reference official-template.docx --final
+```
+
+对非官方DOCX先应用并审计固定字体字号、段落和表格合同：
+
+```bash
+python scripts/resolve_material_format.py --material-id M21 --validate-catalog --out M21-format.json
+python scripts/apply_docx_format_contract.py draft.docx --material-id M21 --out formatted.docx
+python scripts/audit_docx_style_contract.py formatted.docx --material-id M21
+python scripts/audit_docx_style_contract.py filled-official.docx --material-id M01 --reference official-template.docx
 ```
 
 审计脚本通过仍不替代逐页渲染检查。

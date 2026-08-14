@@ -9,6 +9,8 @@ import sys
 from datetime import date, datetime
 from pathlib import Path
 
+from format_contracts import load_contracts, material_contract
+
 REQUIRED_PROJECT = ("title", "leader", "school", "subject", "stage")
 FORMAT_PROFILES = {
     "official-exact",
@@ -97,7 +99,7 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
     schema_version = str(data.get("schema_version", "1.1"))
-    if schema_version not in {"1.1", "1.2", "1.3"}:
+    if schema_version not in {"1.1", "1.2", "1.3", "1.4"}:
         errors.append(f"schema_version不受支持：{schema_version!r}")
     project = data.get("project")
     if not isinstance(project, dict):
@@ -114,7 +116,7 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
 
     project_context = data.get("project_context", {})
     problem_context = data.get("problem_context", {})
-    if schema_version == "1.3":
+    if schema_version in {"1.3", "1.4"}:
         if not isinstance(project_context, dict):
             errors.append("project_context 必须是对象")
             project_context = {}
@@ -163,7 +165,7 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
         errors.append("generation_contract.batch_mode 缺少有效值")
     if generation.get("unknown_handling") not in UNKNOWN_HANDLING:
         errors.append("generation_contract.unknown_handling 缺少有效值")
-    if schema_version in {"1.2", "1.3"} or generation.get("batch_mode") == "incremental":
+    if schema_version in {"1.2", "1.3", "1.4"} or generation.get("batch_mode") == "incremental":
         if not str(generation.get("snapshot_id", "")).strip():
             errors.append("generation_contract.snapshot_id 不能为空")
         generated_at = str(generation.get("generated_at", "")).strip()
@@ -237,7 +239,7 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
             errors.append(f"contributors[{index}].is_approved_member 必须是布尔值")
 
     subject_coverage = data.get("subject_coverage", [])
-    if schema_version in {"1.2", "1.3"} and (not isinstance(subject_coverage, list) or not subject_coverage):
+    if schema_version in {"1.2", "1.3", "1.4"} and (not isinstance(subject_coverage, list) or not subject_coverage):
         errors.append("subject_coverage 至少登记主学科的研究功能、课标范围和复核责任")
         subject_coverage = []
     elif not isinstance(subject_coverage, list):
@@ -563,6 +565,9 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
     material_ids = {str(item.get("id")) for item in material_items}
     if len(material_ids) != len(material_items):
         errors.append("materials 存在重复 id")
+    contract_catalog = load_contracts()
+    known_contracts = set(contract_catalog["profiles"])
+    expected_contracts = contract_catalog["materials"]
 
     requirements = data.get("submission_requirements")
     if not isinstance(requirements, dict):
@@ -633,6 +638,23 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
         format_profile = item.get("format_profile")
         if format_profile not in FORMAT_PROFILES:
             errors.append(f"材料 {item.get('id', index)} 缺少有效 format_profile")
+        format_contract_id = str(item.get("format_contract_id", "")).strip()
+        if schema_version == "1.4" and not format_contract_id:
+            errors.append(f"材料 {item.get('id', index)} 缺少固定 format_contract_id")
+        if format_contract_id and format_contract_id not in known_contracts:
+            errors.append(f"材料 {item.get('id', index)} 使用未知format_contract_id：{format_contract_id}")
+        expected_contract_id = expected_contracts.get(str(item.get("id", "")))
+        if format_contract_id and expected_contract_id and format_contract_id != expected_contract_id:
+            errors.append(
+                f"材料 {item.get('id', index)} 的format_contract_id应为{expected_contract_id}，实际为{format_contract_id}"
+            )
+        if format_contract_id and format_contract_id in known_contracts:
+            resolved_contract = material_contract(str(item.get("id"))) if expected_contract_id else None
+            if resolved_contract and resolved_contract.get("output_format") != output_format:
+                errors.append(
+                    f"材料 {item.get('id', index)} 的版式合同输出格式为"
+                    f"{resolved_contract.get('output_format')}，与{output_format}不一致"
+                )
         if (
             format_profile == "official-exact"
             and item.get("included_in_batch") is not False

@@ -14,6 +14,8 @@ from unittest import mock
 from xml.etree import ElementTree as ET
 
 import yaml
+from docx import Document
+from docx.shared import Pt
 
 REPO = Path(__file__).resolve().parents[1]
 SKILL = REPO / "skills" / "build-k12-research-project"
@@ -21,11 +23,15 @@ SCRIPTS = SKILL / "scripts"
 EXAMPLE = SKILL / "references" / "project-manifest.example.json"
 sys.path.insert(0, str(SCRIPTS))
 
+import apply_docx_format_contract  # noqa: E402
 import audit_content_integrity  # noqa: E402
 import audit_docx_format  # noqa: E402
+import audit_docx_style_contract  # noqa: E402
 import audit_lifecycle_coverage  # noqa: E402
 import audit_project_package  # noqa: E402
+import audit_xlsx_style_contract  # noqa: E402
 import build_material_generation_plan  # noqa: E402
+import format_contracts  # noqa: E402
 import generate_attention_items  # noqa: E402
 import generate_topic_candidates  # noqa: E402
 import initialize_project_package  # noqa: E402
@@ -229,7 +235,7 @@ class SkillTests(unittest.TestCase):
             root = Path(directory) / "示例材料包"
             manifest_path = initialize_project_package.initialize(intake_path, root, SKILL)
             data = json.loads(manifest_path.read_text(encoding="utf-8"))
-            self.assertEqual(data["schema_version"], "1.3")
+            self.assertEqual(data["schema_version"], "1.4")
             self.assertEqual(len(data["materials"]), 26)
             self.assertTrue(all(item["included_in_batch"] for item in data["materials"]))
             self.assertEqual(data["materials"][0]["status"], "draft")
@@ -241,6 +247,39 @@ class SkillTests(unittest.TestCase):
             errors, warnings = audit_lifecycle_coverage.audit(data, final=False)
             self.assertEqual(errors, [])
             self.assertFalse(any("缺少生命周期组" in value for value in warnings), warnings)
+            for material_id, filename in (
+                ("M00", "00_课题材料包注意事项_真实性与待办清单_v0.1.docx"),
+                ("M25", "M25_整套材料目录与交付索引_v0.1.docx"),
+            ):
+                style_errors, _ = audit_docx_style_contract.audit(root / filename, material_id)
+                self.assertEqual(style_errors, [], material_id)
+
+    def test_every_material_has_a_fixed_resolvable_format_contract(self) -> None:
+        catalog_errors = format_contracts.validate_contract_catalog()
+        self.assertEqual(catalog_errors, [])
+        catalog = format_contracts.load_contracts()
+        self.assertEqual(set(catalog["materials"]), {f"M{index:02d}" for index in range(26)})
+        body = format_contracts.material_contract("M21")["roles"]["body"]
+        self.assertEqual(
+            (body["font_east_asia"], body["font_ascii"], body["size_pt"], body["first_line_indent_pt"]),
+            ("仿宋_GB2312", "Times New Roman", 12.0, 24.0),
+        )
+
+    def test_format_contract_apply_and_audit_detects_typography_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "M21.docx"
+            apply_docx_format_contract.apply(
+                SKILL / "assets" / "templates" / "analysis-report.docx", target, "M21"
+            )
+            errors, _ = audit_docx_style_contract.audit(target, "M21")
+            self.assertEqual(errors, [])
+
+            document = Document(target)
+            paragraph = next(value for value in document.paragraphs if value.text.strip())
+            next(value for value in paragraph.runs if value.text.strip()).font.size = Pt(10)
+            document.save(target)
+            errors, _ = audit_docx_style_contract.audit(target, "M21")
+            self.assertTrue(any("字号应为" in value for value in errors), errors)
 
     def test_excluded_official_forms_do_not_create_scope_warnings(self) -> None:
         intake = json.loads((SKILL / "references" / "project-intake.example.json").read_text(encoding="utf-8"))
@@ -382,6 +421,8 @@ class SkillTests(unittest.TestCase):
         self.assertEqual(application["execution_state"], "blocked-template")
         self.assertIn("当年官方模板或用户指定同类模板", application["truth_blockers_for_finalization"])
         self.assertIn("真实原始数据或实施记录", final_report["truth_blockers_for_finalization"])
+        self.assertEqual(final_report["format_contract_id"], "final-report-fixed")
+        self.assertEqual(final_report["resolved_format_contract"]["roles"]["body"]["first_line_indent_pt"], 24.0)
         self.assertTrue(all(job["source_manifest_fields"] and job["completion_gate"] for job in plan["jobs"]))
         self.assertTrue(plan["waiting_jobs"])
 
@@ -631,6 +672,20 @@ class SkillTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        style_errors, style_warnings = audit_xlsx_style_contract.audit(source)
+        self.assertEqual(style_errors, [])
+        self.assertEqual(style_warnings, [])
+
+        with tempfile.TemporaryDirectory() as directory:
+            drifted = Path(directory) / "drifted.xlsx"
+            with zipfile.ZipFile(source) as source_zip, zipfile.ZipFile(drifted, "w") as target_zip:
+                for info in source_zip.infolist():
+                    content = source_zip.read(info.filename)
+                    if info.filename == "xl/styles.xml":
+                        content = content.replace(b"Microsoft YaHei", b"Arial", 1)
+                    target_zip.writestr(info, content)
+            drift_errors, _ = audit_xlsx_style_contract.audit(drifted)
+            self.assertTrue(any("styles.xml" in value or "全簿字体" in value for value in drift_errors), drift_errors)
 
     def test_final_standalone_audit_blocks_warnings(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

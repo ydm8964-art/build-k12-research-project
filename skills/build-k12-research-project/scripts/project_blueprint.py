@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+from format_contracts import load_contracts
+
 FOLDERS = (
     "01政策与立项",
     "02申报",
@@ -33,6 +35,8 @@ WORKBOOK_SHEETS = [
     "照片登记",
     "材料进度",
 ]
+
+MATERIAL_FORMAT_CONTRACTS = load_contracts()["materials"]
 
 
 def _qa(*, data: str = "not-applicable", photo: str = "not-applicable") -> dict[str, str]:
@@ -71,6 +75,7 @@ def _material(
         "status": status,
         "output_format": output_format,
         "format_profile": profile,
+        "format_contract_id": MATERIAL_FORMAT_CONTRACTS[material_id],
         "reference_template": None,
         "reference_source_id": None,
         "stage": stage,

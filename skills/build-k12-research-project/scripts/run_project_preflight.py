@@ -12,10 +12,12 @@ from pathlib import Path
 from audit_casebook_integrity import audit as audit_casebook
 from audit_content_integrity import audit as audit_content
 from audit_docx_format import audit as audit_docx_format
+from audit_docx_style_contract import audit as audit_docx_style_contract
 from audit_lifecycle_coverage import audit as audit_lifecycle
 from audit_photo_evidence import audit as audit_photo
 from audit_project_package import audit as audit_package
 from audit_xlsx_structure import audit as audit_xlsx
+from audit_xlsx_style_contract import audit as audit_xlsx_style_contract
 
 
 def resolve_path(root: Path, value: str | None) -> Path | None:
@@ -87,6 +89,11 @@ def run(manifest_path: Path, root: Path, final: bool) -> dict:
             except Exception as exc:
                 errors, warnings = [f"审计执行失败：{exc}"], []
             add_result(checks, "xlsx-structure", str(path), errors, warnings, material_id)
+            try:
+                errors, warnings = audit_xlsx_style_contract(path, material_id)
+            except Exception as exc:
+                errors, warnings = [f"审计执行失败：{exc}"], []
+            add_result(checks, "xlsx-style-contract", str(path), errors, warnings, material_id)
             continue
         if path.suffix.lower() != ".docx":
             continue
@@ -115,6 +122,12 @@ def run(manifest_path: Path, root: Path, final: bool) -> dict:
             except Exception as exc:
                 errors, warnings = [f"审计执行失败：{exc}"], []
         add_result(checks, "docx-format", str(path), errors, warnings, material_id)
+
+        try:
+            errors, warnings = audit_docx_style_contract(path, material_id, reference)
+        except Exception as exc:
+            errors, warnings = [f"审计执行失败：{exc}"], []
+        add_result(checks, "docx-style-contract", str(path), errors, warnings, material_id)
 
         if item.get("material_role") in {"case", "casebook"}:
             try:
