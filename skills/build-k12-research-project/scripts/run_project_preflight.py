@@ -148,7 +148,7 @@ def run(manifest_path: Path, root: Path, final: bool) -> dict:
     warning_count = sum(len(item["warnings"]) for item in checks)
     strict_failure = bool(error_count or (final and warning_count))
     return {
-        "schema_version": "1.2",
+        "schema_version": "1.3",
         "run_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "manifest": str(manifest_path),
         "root": str(root),
@@ -158,7 +158,7 @@ def run(manifest_path: Path, root: Path, final: bool) -> dict:
         "warning_count": warning_count,
         "checks": checks,
         "manual_gates": [
-            "按当年官方通知核对报送系统、限额、命名、份数、签章和截止时间",
+            "确认本课题已重新联网检索官方通知和附件；核对search_run_id、7日新鲜度、报送系统、限额、命名、份数、签章和截止时间",
             "DOCX/PDF逐页渲染检查并更新目录、页码、题注和交叉引用",
             "XLSX逐工作表视觉检查、公式复算及Word/PDF数值回查",
             "照片真实性、人物授权/打码、学科事实、署名与签章人工复核",

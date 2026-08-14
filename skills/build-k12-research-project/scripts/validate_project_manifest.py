@@ -99,7 +99,7 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
     schema_version = str(data.get("schema_version", "1.1"))
-    if schema_version not in {"1.1", "1.2", "1.3", "1.4"}:
+    if schema_version not in {"1.1", "1.2", "1.3", "1.4", "1.5"}:
         errors.append(f"schema_version不受支持：{schema_version!r}")
     project = data.get("project")
     if not isinstance(project, dict):
@@ -116,7 +116,7 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
 
     project_context = data.get("project_context", {})
     problem_context = data.get("problem_context", {})
-    if schema_version in {"1.3", "1.4"}:
+    if schema_version in {"1.3", "1.4", "1.5"}:
         if not isinstance(project_context, dict):
             errors.append("project_context 必须是对象")
             project_context = {}
@@ -165,7 +165,7 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
         errors.append("generation_contract.batch_mode 缺少有效值")
     if generation.get("unknown_handling") not in UNKNOWN_HANDLING:
         errors.append("generation_contract.unknown_handling 缺少有效值")
-    if schema_version in {"1.2", "1.3", "1.4"} or generation.get("batch_mode") == "incremental":
+    if schema_version in {"1.2", "1.3", "1.4", "1.5"} or generation.get("batch_mode") == "incremental":
         if not str(generation.get("snapshot_id", "")).strip():
             errors.append("generation_contract.snapshot_id 不能为空")
         generated_at = str(generation.get("generated_at", "")).strip()
@@ -239,7 +239,7 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
             errors.append(f"contributors[{index}].is_approved_member 必须是布尔值")
 
     subject_coverage = data.get("subject_coverage", [])
-    if schema_version in {"1.2", "1.3", "1.4"} and (not isinstance(subject_coverage, list) or not subject_coverage):
+    if schema_version in {"1.2", "1.3", "1.4", "1.5"} and (not isinstance(subject_coverage, list) or not subject_coverage):
         errors.append("subject_coverage 至少登记主学科的研究功能、课标范围和复核责任")
         subject_coverage = []
     elif not isinstance(subject_coverage, list):
@@ -602,6 +602,29 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
                 errors.append(f"submission_requirements.{key} 引用了不存在的ID：{value}")
 
     if requirement_status == "verified":
+        searched_day = None
+        if not str(requirements.get("search_run_id", "")).strip():
+            errors.append("submission_requirements 已核验，但缺少本项目唯一search_run_id；每次做课题必须重新检索")
+        if not requirements.get("searched_at"):
+            errors.append("submission_requirements 已核验，但缺少searched_at")
+        else:
+            searched_day = parse_day(str(requirements.get("searched_at")), "submission_requirements.searched_at", errors)
+        portals = requirements.get("official_portals_checked", [])
+        queries = requirements.get("search_queries", [])
+        if not isinstance(portals, list) or not portals or any(not str(value).strip() for value in portals):
+            errors.append("submission_requirements 已核验，但official_portals_checked不是非空数组")
+        if not isinstance(queries, list) or not queries or any(not str(value).strip() for value in queries):
+            errors.append("submission_requirements 已核验，但search_queries不是非空数组")
+        if not str(requirements.get("policy_snapshot_file", "")).strip():
+            errors.append("submission_requirements 已核验，但缺少policy_snapshot_file")
+        if not valid_sha256(requirements.get("policy_snapshot_sha256")):
+            errors.append("submission_requirements 已核验，但policy_snapshot_sha256不是64位SHA-256")
+        if current_day and searched_day and (current_day - searched_day).days > 7:
+            errors.append(
+                f"本项目官方要求检索已超过7天（{searched_day}→{current_day}）；交付前必须重新联网核验"
+            )
+        if current_day and searched_day and searched_day > current_day:
+            errors.append("submission_requirements.searched_at不能晚于governance.current_date")
         if not requirements.get("verified_at"):
             errors.append("submission_requirements 已核验，但缺少 verified_at")
         else:
@@ -639,7 +662,7 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
         if format_profile not in FORMAT_PROFILES:
             errors.append(f"材料 {item.get('id', index)} 缺少有效 format_profile")
         format_contract_id = str(item.get("format_contract_id", "")).strip()
-        if schema_version == "1.4" and not format_contract_id:
+        if schema_version in {"1.4", "1.5"} and not format_contract_id:
             errors.append(f"材料 {item.get('id', index)} 缺少固定 format_contract_id")
         if format_contract_id and format_contract_id not in known_contracts:
             errors.append(f"材料 {item.get('id', index)} 使用未知format_contract_id：{format_contract_id}")

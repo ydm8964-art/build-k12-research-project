@@ -100,6 +100,8 @@ def build(manifest: dict) -> dict:
     if errors:
         raise ValueError("主清单未通过校验：" + "；".join(errors))
     materials = [item for item in manifest["materials"] if item.get("included_in_batch")]
+    requirements = manifest.get("submission_requirements", {})
+    policy_verified = isinstance(requirements, dict) and requirements.get("status") == "verified"
     waves = topological_waves(materials)
     wave_by_id = {item_id: index for index, wave in enumerate(waves, 1) for item_id in wave}
     jobs = []
@@ -109,6 +111,8 @@ def build(manifest: dict) -> dict:
         blockers = list(TRUTH_REQUIREMENTS.get(item["status"], []))
         if item["format_profile"] == "official-exact" and not item.get("reference_template"):
             blockers.append("当年官方模板或用户指定同类模板")
+        if item["format_profile"] == "official-exact" and not policy_verified:
+            blockers.append("完成本项目实时官方政策检索并登记verified要求快照")
         target_path = item.get("file_path") or item.get("planned_file_path")
         format_contract_id = item.get("format_contract_id")
         fixed_format = material_contract(item["id"]) if format_contract_id else None
@@ -130,7 +134,7 @@ def build(manifest: dict) -> dict:
             "allowed_now": "生成结构和基于已登记事实的工作稿；缺失未来事实使用结构化待办，禁止编造",
             "work_action": "revise-and-qa" if item.get("file_path") else "create-and-qa",
             "completion_gate": [
-                "内容QA", "固定字体字号与段落合同QA", "结构格式QA",
+                "内容QA", "标题/正文语义角色与固定字体字号段落合同QA", "结构格式QA",
                 "逐页或逐表渲染QA", "隐私QA", "登记文件路径和SHA-256",
             ],
         })
@@ -155,6 +159,9 @@ def build(manifest: dict) -> dict:
             elif any("当年官方模板或用户指定同类模板" == value for value in job["truth_blockers_for_finalization"]):
                 job["execution_state"] = "blocked-template"
                 blocked_jobs.append(job["job_id"])
+            elif any(value.startswith("完成本项目实时官方政策检索") for value in job["truth_blockers_for_finalization"]):
+                job["execution_state"] = "blocked-policy-snapshot"
+                blocked_jobs.append(job["job_id"])
             elif material["status"] in TRUTH_REQUIREMENTS and material.get("file_path") and not truth_inputs_ready(manifest, material["status"]):
                 job["execution_state"] = "waiting-truth-input"
                 job["waiting_for_truth_inputs"] = TRUTH_REQUIREMENTS[material["status"]]
@@ -174,6 +181,11 @@ def build(manifest: dict) -> dict:
         "schema_version": "1.1", "snapshot_id": manifest["generation_contract"].get("snapshot_id"),
         "package_scope": manifest["generation_contract"]["package_scope"],
         "truth_state": manifest["generation_contract"]["truth_state"],
+        "policy_search_gate": {
+            "status": "passed" if policy_verified else "pending",
+            "search_run_id": requirements.get("search_run_id") if isinstance(requirements, dict) else None,
+            "searched_at": requirements.get("searched_at") if isinstance(requirements, dict) else None,
+        },
         "warnings": warnings, "wave_count": len(waves), "waves": waves,
         "material_job_count": len(jobs), "unfinished_jobs": unfinished_jobs,
         "next_jobs": next_jobs, "blocked_jobs": blocked_jobs, "waiting_jobs": waiting_jobs, "jobs": jobs,

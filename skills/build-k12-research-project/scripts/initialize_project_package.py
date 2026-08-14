@@ -80,6 +80,12 @@ def build_manifest(intake: dict) -> dict:
     requirements.setdefault("status", "pending")
     requirements.setdefault("year", intake["project"]["year"])
     requirements.setdefault("verified_at", None)
+    requirements.setdefault("search_run_id", None)
+    requirements.setdefault("searched_at", None)
+    requirements.setdefault("official_portals_checked", [])
+    requirements.setdefault("search_queries", [])
+    requirements.setdefault("policy_snapshot_file", None)
+    requirements.setdefault("policy_snapshot_sha256", None)
     requirements.setdefault("deadline", None)
     requirements.setdefault("notice_source_ids", [])
     requirements.setdefault("template_source_ids", [])
@@ -89,7 +95,7 @@ def build_manifest(intake: dict) -> dict:
     requirements.setdefault("file_rules", {"max_size_mb": None, "naming_rule": None, "copies": None})
 
     manifest = {
-        "schema_version": "1.4",
+        "schema_version": "1.5",
         "project": intake["project"],
         "project_context": intake.get("project_context", {}),
         "problem_context": intake.get("problem_context", {}),

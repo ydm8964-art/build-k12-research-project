@@ -10,6 +10,7 @@ import re
 import sys
 import zipfile
 from collections import defaultdict
+from datetime import date
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
@@ -196,6 +197,28 @@ def audit(manifest_path: Path, root: Path, final: bool) -> tuple[list[str], list
         else:
             if not requirements.get("verified_at"):
                 errors.append("当年要求快照缺少verified_at")
+            searched_at = requirements.get("searched_at")
+            try:
+                searched_day = date.fromisoformat(str(searched_at))
+            except (TypeError, ValueError):
+                errors.append("当年要求快照缺少有效searched_at")
+            else:
+                age = (date.today() - searched_day).days
+                if age > 7:
+                    errors.append(f"当年要求联网检索距实际打包日已{age}天，超过7天；必须重新检索")
+                if age < 0:
+                    errors.append("当年要求searched_at晚于实际打包日")
+            snapshot_value = requirements.get("policy_snapshot_file")
+            if not snapshot_value:
+                errors.append("当年要求快照缺少policy_snapshot_file")
+            else:
+                snapshot_path, inside = resolve_material_path(root, str(snapshot_value))
+                if not inside:
+                    errors.append(f"当年要求快照不在交付根目录内：{snapshot_path}")
+                elif not snapshot_path.is_file():
+                    errors.append(f"当年要求快照文件不存在：{snapshot_path}")
+                elif str(requirements.get("policy_snapshot_sha256", "")).lower() != sha256(snapshot_path):
+                    errors.append("当年要求快照实际SHA-256与主清单不一致")
             sources = {
                 str(item.get("id")): item
                 for item in data.get("sources", [])

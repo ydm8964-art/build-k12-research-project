@@ -12,6 +12,7 @@ from apply_docx_format_contract import ALIGNMENTS, STYLE_NAMES, classify
 from docx import Document
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
 from docx.oxml.ns import qn
+from docx_role_classifier import explicit_role, normalized_text, semantic_conflict, semantic_role
 from format_contracts import DEFAULT_CONTRACT_PATH, material_contract
 
 
@@ -191,6 +192,7 @@ def audit(
     if contract.get("output_format") != "docx":
         return [f"{material_id}不是DOCX版式合同"], []
     errors: list[str] = []
+    role_counts: dict[str, int] = {}
     page = contract["page"]
     expected_size = (297.0, 210.0) if page["orientation"] == "landscape" else (210.0, 297.0)
     for index, section in enumerate(document.sections, 1):
@@ -210,6 +212,13 @@ def audit(
             continue
         role = classify(paragraph, nonempty_index, contract)
         errors.extend(check_paragraph(paragraph, role, contract, f"正文第{paragraph_index}段({role})"))
+        role_counts[role] = role_counts.get(role, 0) + 1
+        inferred = semantic_role(paragraph, nonempty_index, contract, trust_k12_style=False)
+        conflict = semantic_conflict(explicit_role(paragraph) or role, inferred, normalized_text(paragraph))
+        if conflict:
+            errors.append(
+                f"正文第{paragraph_index}段标题/正文角色冲突：{conflict}；文本“{normalized_text(paragraph)[:60]}”"
+            )
         nonempty_index += 1
         if len(errors) >= 60:
             break
@@ -226,6 +235,7 @@ def audit(
                             continue
                         label = f"表{table_index}第{row_index}行{cell_index}列第{paragraph_index}段({role})"
                         errors.extend(check_paragraph(paragraph, role, contract, label))
+                        role_counts[role] = role_counts.get(role, 0) + 1
                         if len(errors) >= 60:
                             break
     if len(errors) < 60:
@@ -242,6 +252,16 @@ def audit(
                             f"第{section_index}节{container_name}第{paragraph_index}段(header_footer)",
                         )
                     )
+                    role_counts["header_footer"] = role_counts.get("header_footer", 0) + 1
+    expectations = contract.get("role_expectations", {})
+    for role, minimum in expectations.get("required", {}).items():
+        actual = role_counts.get(role, 0)
+        if actual < int(minimum):
+            errors.append(f"材料{material_id}要求至少{minimum}个{role}段落，实际{actual}个；标题/正文结构不完整")
+    for role, maximum in expectations.get("maximum", {}).items():
+        actual = role_counts.get(role, 0)
+        if actual > int(maximum):
+            errors.append(f"材料{material_id}最多允许{maximum}个{role}段落，实际{actual}个；疑似把正文误作标题")
     if len(errors) >= 60:
         errors = errors[:60] + ["版式合同差异超过60处，停止继续列出"]
     return errors, []

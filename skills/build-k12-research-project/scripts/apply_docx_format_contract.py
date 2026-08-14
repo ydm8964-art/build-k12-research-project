@@ -4,8 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
-import re
 import sys
 from pathlib import Path
 
@@ -17,28 +17,10 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Mm, Pt
+from docx_role_classifier import K12_STYLE_NAMES, semantic_role
 from format_contracts import DEFAULT_CONTRACT_PATH, material_contract
 
-STYLE_NAMES = {
-    "cover_title": "K12 Cover Title",
-    "title": "K12 Title",
-    "subtitle": "K12 Subtitle",
-    "heading1": "K12 Heading 1",
-    "heading2": "K12 Heading 2",
-    "heading3": "K12 Heading 3",
-    "heading4": "K12 Heading 4",
-    "body": "K12 Body",
-    "list": "K12 List",
-    "toc_title": "K12 TOC Title",
-    "toc_level1": "K12 TOC Level 1",
-    "toc_level2": "K12 TOC Level 2",
-    "caption": "K12 Caption",
-    "table_header": "K12 Table Header",
-    "table_body": "K12 Table Body",
-    "table_note": "K12 Table Note",
-    "photo_placeholder": "K12 Photo Placeholder",
-    "header_footer": "K12 Header Footer",
-}
+STYLE_NAMES = K12_STYLE_NAMES
 
 ALIGNMENTS = {
     "left": WD_ALIGN_PARAGRAPH.LEFT,
@@ -89,40 +71,7 @@ def ensure_styles(document: Document, contract: dict) -> None:
 
 
 def classify(paragraph, index: int, contract: dict) -> str:
-    text = paragraph.text.strip()
-    style_name = paragraph.style.name.lower()
-    for role, fixed_name in STYLE_NAMES.items():
-        if style_name == fixed_name.lower():
-            return role
-    if text.startswith("【待插入真实照片"):
-        return "photo_placeholder"
-    if text == "目录":
-        return "toc_title"
-    if style_name.startswith("toc 2") or "目录 2" in style_name:
-        return "toc_level2"
-    if style_name.startswith("toc") or "目录 1" in style_name:
-        return "toc_level1"
-    if re.match(r"^(图|表)\s*\d+", text):
-        return "caption"
-    if "subtitle" in style_name or "副标题" in style_name:
-        return "subtitle"
-    if "title" in style_name or "标题" in style_name and "heading" not in style_name:
-        return "title"
-    if "heading 1" in style_name or re.match(r"^[一二三四五六七八九十]+[、．.]", text):
-        return "heading1"
-    if "heading 2" in style_name or re.match(r"^[（(][一二三四五六七八九十]+[）)]", text):
-        return "heading2"
-    if "heading 3" in style_name:
-        return "heading3"
-    if "heading 4" in style_name or re.match(r"^[（(]\d+[）)]", text):
-        return "heading4"
-    if re.match(r"^\d+[.、．]", text):
-        return contract.get("classification", {}).get("numbered_paragraph_role", "heading3")
-    if index == 0:
-        return "cover_title" if contract["contract_id"] == "casebook-fixed" else "title"
-    if re.match(r"^[•●□☐✓√-]\s*", text):
-        return "list"
-    return "body"
+    return semantic_role(paragraph, index, contract)
 
 
 def apply_paragraph(paragraph, role_name: str, contract: dict) -> None:
@@ -174,7 +123,33 @@ def enforce_table_contract(table, contract: dict) -> None:
         header.set(qn("w:val"), "true")
 
 
-def apply(path: Path, target: Path, material_id: str, contracts_path: Path = DEFAULT_CONTRACT_PATH) -> dict:
+def load_role_map(path: Path | None) -> dict[int, str]:
+    if path is None:
+        return {}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    raw = data.get("body_paragraphs", data)
+    if not isinstance(raw, dict):
+        raise ValueError("段落角色映射必须是对象，键为正文非空段落序号")
+    valid_roles = set(STYLE_NAMES)
+    result: dict[int, str] = {}
+    for key, value in raw.items():
+        try:
+            ordinal = int(key)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"无效段落序号：{key!r}") from exc
+        if ordinal < 1 or value not in valid_roles:
+            raise ValueError(f"无效段落角色映射：{key!r} -> {value!r}")
+        result[ordinal] = str(value)
+    return result
+
+
+def apply(
+    path: Path,
+    target: Path,
+    material_id: str,
+    contracts_path: Path = DEFAULT_CONTRACT_PATH,
+    role_map_path: Path | None = None,
+) -> dict:
     contract = material_contract(material_id, contracts_path)
     if contract.get("mode") == "official-exact":
         raise ValueError(f"{material_id}必须沿用官方模板，禁止用通用合同重排")
@@ -196,15 +171,22 @@ def apply(path: Path, target: Path, material_id: str, contracts_path: Path = DEF
         section.header_distance = Mm(float(page["header_mm"]))
         section.footer_distance = Mm(float(page["footer_mm"]))
     ensure_styles(document, contract)
+    role_map = load_role_map(role_map_path)
     nonempty_index = 0
     counts: dict[str, int] = {}
+    assignments: list[dict[str, object]] = []
     for paragraph in document.paragraphs:
         if not paragraph.text.strip():
             continue
-        role = classify(paragraph, nonempty_index, contract)
+        ordinal = nonempty_index + 1
+        role = role_map.get(ordinal) or classify(paragraph, nonempty_index, contract)
         apply_paragraph(paragraph, role, contract)
         counts[role] = counts.get(role, 0) + 1
+        assignments.append({"ordinal": ordinal, "role": role, "text": paragraph.text.strip()[:120]})
         nonempty_index += 1
+    unknown_ordinals = sorted(set(role_map) - {item["ordinal"] for item in assignments})
+    if unknown_ordinals:
+        raise ValueError(f"段落角色映射引用不存在的正文非空段落：{unknown_ordinals}")
     for table in document.tables:
         enforce_table_contract(table, contract)
         for row_index, row in enumerate(table.rows):
@@ -225,14 +207,24 @@ def apply(path: Path, target: Path, material_id: str, contracts_path: Path = DEF
                 counts["header_footer"] = counts.get("header_footer", 0) + 1
     target.parent.mkdir(parents=True, exist_ok=True)
     document.save(target)
-    return {"material_id": material_id, "contract_id": contract["contract_id"], "roles_applied": counts}
+    return {
+        "material_id": material_id,
+        "contract_id": contract["contract_id"],
+        "roles_applied": counts,
+        "body_paragraph_assignments": assignments,
+    }
 
 
-def apply_in_place(path: Path, material_id: str, contracts_path: Path = DEFAULT_CONTRACT_PATH) -> dict:
+def apply_in_place(
+    path: Path,
+    material_id: str,
+    contracts_path: Path = DEFAULT_CONTRACT_PATH,
+    role_map_path: Path | None = None,
+) -> dict:
     """Apply a contract through a sibling temporary file, then atomically replace the DOCX."""
     temporary = path.with_name(f".{path.stem}.format-contract.tmp.docx")
     try:
-        result = apply(path, temporary, material_id, contracts_path)
+        result = apply(path, temporary, material_id, contracts_path, role_map_path)
         os.replace(temporary, path)
         return result
     finally:
@@ -245,14 +237,20 @@ def main() -> int:
     parser.add_argument("--material-id", required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--contracts", type=Path, default=DEFAULT_CONTRACT_PATH)
+    parser.add_argument("--role-map", type=Path, help="可选JSON：按正文非空段落序号显式指定语义角色")
+    parser.add_argument("--role-report", type=Path, help="写出本次标题/正文角色分配报告JSON")
     args = parser.parse_args()
     try:
-        result = apply(args.docx, args.out, args.material_id, args.contracts)
-    except (OSError, ValueError) as exc:
+        result = apply(args.docx, args.out, args.material_id, args.contracts, args.role_map)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"应用版式合同失败：{exc}", file=sys.stderr)
         return 1
     print(args.out.resolve())
     print(f"材料{result['material_id']}已应用{result['contract_id']}：{result['roles_applied']}")
+    if args.role_report:
+        args.role_report.parent.mkdir(parents=True, exist_ok=True)
+        args.role_report.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(f"标题/正文角色报告：{args.role_report.resolve()}")
     return 0
 
 

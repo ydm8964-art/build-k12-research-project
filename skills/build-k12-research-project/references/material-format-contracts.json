@@ -9,6 +9,7 @@
       "page": {"size": "A4", "orientation": "portrait", "top_mm": 25.4, "bottom_mm": 25.4, "left_mm": 28.0, "right_mm": 28.0, "header_mm": 15.0, "footer_mm": 15.0},
       "roles": {
         "cover_title": {"font_east_asia": "宋体", "font_ascii": "Times New Roman", "size_pt": 28.0, "bold": true, "alignment": "center", "first_line_indent_pt": 0.0, "line_spacing": {"kind": "fixed", "value": 38.0}, "space_before_pt": 0.0, "space_after_pt": 18.0},
+        "cover_metadata": {"font_east_asia": "宋体", "font_ascii": "Times New Roman", "size_pt": 12.0, "bold": false, "alignment": "left", "left_indent_pt": 72.0, "first_line_indent_pt": 0.0, "line_spacing": {"kind": "fixed", "value": 24.0}, "space_before_pt": 0.0, "space_after_pt": 3.0},
         "title": {"font_east_asia": "宋体", "font_ascii": "Times New Roman", "size_pt": 22.0, "bold": true, "alignment": "center", "first_line_indent_pt": 0.0, "line_spacing": {"kind": "fixed", "value": 30.0}, "space_before_pt": 0.0, "space_after_pt": 12.0, "keep_with_next": true},
         "subtitle": {"font_east_asia": "宋体", "font_ascii": "Times New Roman", "size_pt": 12.0, "bold": false, "alignment": "center", "first_line_indent_pt": 0.0, "line_spacing": {"kind": "fixed", "value": 20.0}, "space_before_pt": 0.0, "space_after_pt": 12.0},
         "heading1": {"font_east_asia": "黑体", "font_ascii": "Arial", "size_pt": 16.0, "bold": true, "alignment": "left", "first_line_indent_pt": 0.0, "line_spacing": {"kind": "fixed", "value": 24.0}, "space_before_pt": 12.0, "space_after_pt": 6.0, "keep_with_next": true},
@@ -34,6 +35,7 @@
       "extends": "document-base",
       "classification": {"numbered_paragraph_role": "list"},
       "roles": {
+        "cover_metadata": {"alignment": "left", "left_indent_pt": 0.0, "first_line_indent_pt": 0.0, "line_spacing": {"kind": "fixed", "value": 20.0}, "space_after_pt": 2.0},
         "title": {"size_pt": 18.0, "line_spacing": {"kind": "fixed", "value": 28.0}, "space_after_pt": 10.0},
         "heading1": {"size_pt": 15.0, "line_spacing": {"kind": "fixed", "value": 22.0}, "space_before_pt": 8.0, "space_after_pt": 4.0},
         "heading2": {"font_east_asia": "宋体", "size_pt": 13.5, "line_spacing": {"kind": "fixed", "value": 20.0}, "space_before_pt": 4.0, "space_after_pt": 2.0},
@@ -58,6 +60,7 @@
       "extends": "document-base",
       "page": {"orientation": "landscape", "top_mm": 18.0, "bottom_mm": 18.0, "left_mm": 18.0, "right_mm": 18.0, "header_mm": 10.0, "footer_mm": 10.0},
       "roles": {
+        "cover_metadata": {"font_east_asia": "宋体", "size_pt": 10.5, "alignment": "left", "left_indent_pt": 0.0, "first_line_indent_pt": 0.0, "line_spacing": {"kind": "fixed", "value": 18.0}, "space_after_pt": 2.0},
         "title": {"size_pt": 18.0, "line_spacing": {"kind": "fixed", "value": 26.0}, "space_after_pt": 8.0},
         "heading1": {"size_pt": 14.0, "line_spacing": {"kind": "fixed", "value": 21.0}, "space_before_pt": 6.0, "space_after_pt": 3.0},
         "body": {"font_east_asia": "宋体", "size_pt": 10.5, "first_line_indent_pt": 21.0, "line_spacing": {"kind": "multiple", "value": 1.25}},
@@ -75,7 +78,7 @@
     "evidence-index-fixed": {"extends": "landscape-control-base"},
     "analysis-report-fixed": {"extends": "formal-report-base"},
     "implementation-plan-fixed": {"extends": "formal-report-base"},
-    "lesson-long-fixed": {"extends": "formal-report-base"},
+    "lesson-long-fixed": {"extends": "formal-report-base", "roles": {"title": {"size_pt": 16.0, "line_spacing": {"kind": "fixed", "value": 24.0}, "space_after_pt": 8.0}}},
     "task-sheet-fixed": {"extends": "form-base"},
     "rubric-fixed": {"extends": "form-base", "page": {"orientation": "landscape", "top_mm": 18.0, "bottom_mm": 18.0, "left_mm": 18.0, "right_mm": 18.0}},
     "casebook-fixed": {"extends": "formal-report-base", "pagination": {"each_case_new_page": true, "toc_required": true, "continuous_figure_numbers": true, "continuous_table_numbers": true}},
@@ -136,5 +139,28 @@
     "M23": "achievement-catalog-fixed",
     "M24": "proof-index-fixed",
     "M25": "delivery-index-fixed"
+  },
+  "role_expectations": {
+    "M00": {"required": {"title": 1, "table_body": 1}, "maximum": {"title": 1}},
+    "M04": {"required": {"title": 1, "body": 1}, "maximum": {"title": 1}},
+    "M05": {"required": {"title": 1, "body": 1}, "maximum": {"title": 1}},
+    "M06": {"required": {"title": 1, "body": 1}, "maximum": {"title": 1}},
+    "M07": {"required": {"title": 1, "table_body": 1}, "maximum": {"title": 1}},
+    "M08": {"required": {"title": 1, "body": 1}, "maximum": {"title": 1}},
+    "M10": {"required": {"title": 1, "table_body": 1}, "maximum": {"title": 1}},
+    "M11": {"required": {"title": 1, "heading1": 1, "body": 1}, "maximum": {"title": 1}},
+    "M12": {"required": {"title": 1, "heading1": 1, "body": 1}, "maximum": {"title": 1}},
+    "M13": {"required": {"title": 1, "heading1": 1, "body": 1}, "maximum": {"title": 1}},
+    "M14": {"required": {"title": 1, "body": 1}, "maximum": {"title": 1}},
+    "M15": {"required": {"title": 1, "table_body": 1}, "maximum": {"title": 1}},
+    "M16": {"required": {"cover_title": 1, "heading1": 1, "body": 1}},
+    "M17": {"required": {"title": 1, "table_body": 1}, "maximum": {"title": 1}},
+    "M18": {"required": {"title": 1, "table_body": 1}, "maximum": {"title": 1}},
+    "M19": {"required": {"title": 1, "heading1": 1, "body": 1}, "maximum": {"title": 1}},
+    "M20": {"required": {"title": 1}, "maximum": {"title": 1}},
+    "M21": {"required": {"title": 1, "heading1": 1, "body": 1}, "maximum": {"title": 1}},
+    "M23": {"required": {"title": 1, "table_body": 1}, "maximum": {"title": 1}},
+    "M24": {"required": {"title": 1, "table_body": 1}, "maximum": {"title": 1}},
+    "M25": {"required": {"title": 1, "table_body": 1}, "maximum": {"title": 1}}
   }
 }

@@ -15,6 +15,7 @@
 | 层级/对象 | 中文字体 | 西文字体 | 字号 | 加粗 | 对齐 | 首行/悬挂 | 行距 | 段前/段后 |
 |---|---|---|---:|---|---|---|---|---|
 | 封面主标题 | 宋体 | Times New Roman | 28磅 | 是 | 居中 | 0 | 固定38磅 | 0/18磅 |
+| 封面信息（负责人、学校、日期等） | 宋体 | Times New Roman | 12磅 | 否 | 左对齐、左缩进72磅 | 0 | 固定24磅 | 0/3磅 |
 | 文档标题 | 宋体 | Times New Roman | 22磅 | 是 | 居中 | 0 | 固定30磅 | 0/12磅 |
 | 副标题/署名行 | 宋体 | Times New Roman | 12磅 | 否 | 居中 | 0 | 固定20磅 | 0/12磅 |
 | 一级标题 | 黑体 | Arial | 16磅 | 是 | 左对齐 | 0 | 固定24磅 | 12/6磅 |
@@ -114,10 +115,14 @@
 
 ```bash
 python scripts/resolve_material_format.py --material-id M21 --validate-catalog --out M21-format.json
-python scripts/apply_docx_format_contract.py draft.docx --material-id M21 --out formatted.docx
+python scripts/apply_docx_format_contract.py draft.docx --material-id M21 --out formatted.docx --role-report M21-role-report.json
 python scripts/audit_docx_style_contract.py formatted.docx --material-id M21
 python scripts/audit_docx_format.py formatted.docx --profile analysis-report --final
 python scripts/audit_xlsx_style_contract.py M09.xlsx
 ```
 
 `official-template-exact`不运行通用套版脚本，改为同时向两个审计脚本提供`--reference official-template.docx`。任何字体、字号、首行缩进、行距、页边距或表格硬值错误都不能标记`ready`。
+
+套版不再只信任已有Word样式。脚本会识别主标题、封面信息、目录、一级至四级标题、正文、列表、题注和照片占位，并把每个非空正文段落的角色写入`--role-report`。对于无法仅凭文本可靠判断的短句，先生成角色映射JSON，再用`--role-map role-map.json`显式指定段落序号和角色。
+
+审计时独立重新判断语义角色：疑似标题却套正文、长句或完整句误套标题、标题数量异常、报告缺少一级标题或正文，均为阻断错误。M00—M25的`role_expectations`规定每种材料必须出现和最多允许出现的标题/正文角色；不能靠字体数值正确掩盖层级套错。

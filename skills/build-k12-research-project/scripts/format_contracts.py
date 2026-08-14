@@ -57,6 +57,7 @@ def material_contract(material_id: str, path: Path = DEFAULT_CONTRACT_PATH) -> d
         raise ValueError(f"材料{material_id}未绑定版式合同")
     result = resolve_profile(str(profile_id), data)
     result["material_id"] = material_id
+    result["role_expectations"] = deepcopy(data.get("role_expectations", {}).get(material_id, {}))
     return result
 
 
@@ -76,11 +77,23 @@ def validate_contract_catalog(path: Path = DEFAULT_CONTRACT_PATH) -> list[str]:
         if contract.get("output_format") == "docx" and contract.get("mode") != "official-exact":
             roles = contract.get("roles", {})
             for role in (
-                "title", "heading1", "heading2", "heading3", "body", "toc_title", "toc_level1", "toc_level2",
+                "title", "cover_metadata", "heading1", "heading2", "heading3", "body", "toc_title", "toc_level1", "toc_level2",
                 "caption", "table_header", "table_body", "header_footer",
             ):
                 if role not in roles:
                     errors.append(f"{material_id}/{profile_id}缺少{role}格式")
+            expectations = data.get("role_expectations", {}).get(material_id)
+            if not isinstance(expectations, dict):
+                errors.append(f"{material_id}/{profile_id}缺少标题/正文角色覆盖合同")
+            else:
+                for group in ("required", "maximum"):
+                    values = expectations.get(group, {})
+                    if not isinstance(values, dict):
+                        errors.append(f"{material_id}/{profile_id}的{group}角色合同必须是对象")
+                        continue
+                    for role, count in values.items():
+                        if role not in roles or not isinstance(count, int) or count < 0:
+                            errors.append(f"{material_id}/{profile_id}的{group}.{role}无效")
         if contract.get("output_format") == "xlsx":
             for key in ("reference_template", "required_sheets", "freeze", "rows", "roles", "number_formats"):
                 if not contract.get(key):

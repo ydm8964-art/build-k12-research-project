@@ -1,6 +1,6 @@
 ---
 name: build-k12-research-project
-description: 为贵州省及黔东南州中小学教师规划、申报、实施和结题教育科研课题。用于根据教师、学校、学科、学段、班级和教学问题推荐方向、规范选题，并按当年官方模板生成相互一致的申请书、开题报告、研究工具、Word表格、数据XLSX、真实照片证据、教学案例、研究报告和结题材料；也用于审核格式、表格、时间、数据、隐私、署名、学科事实、证据闭环与整套文件夹。
+description: 为贵州省及黔东南州中小学教师规划、申报、实施和结题教育科研课题。用于根据教师、学校、学科、学段、班级和教学问题推荐方向、规范选题，每次实时检索当年官方政策和模板，并生成相互一致的申请书、开题报告、研究工具、Word表格、数据XLSX、真实照片证据、教学案例、研究报告、结题材料及最终整套ZIP；也用于审核标题正文格式、表格、时间、数据、隐私、署名、学科事实、证据闭环与整套文件夹。
 ---
 
 # 中小学课题全流程生成
@@ -26,6 +26,7 @@ description: 为贵州省及黔东南州中小学教师规划、申报、实施�
 - 设计问卷、访谈、观察、数据分析和效果证据：读 [methods-and-evidence.md](references/methods-and-evidence.md)。
 - 排期或终审：读 [timeline-and-quality.md](references/timeline-and-quality.md)。
 - 涉及贵州省、黔东南州申报或结题：读 [guizhou-qiandongnan.md](references/guizhou-qiandongnan.md)。
+- 每次新课题、年度/管理单位变化或最终打包前：必须读[实时政策检索与快照](references/live-policy-search-and-snapshot.md)，重新联网搜索并登记本项目独立快照；不得复用上一个课题的检索结果。
 - 用户要求沿用本地参考材料的方法、栏目或成套形态：读 [source-derived-blueprints.md](references/source-derived-blueprints.md)。该文件只提供结构母版，不允许复制其中的项目事实、人员、日期或数据。
 - 用户要求“一次性生成全套”或只提供一次基本信息后批量生成：读 [one-shot-generation-protocol.md](references/one-shot-generation-protocol.md)，先确定成套范围和真实性阶段，再整批生成。
 - 需要判断用户提供的本地历史材料包中哪类材料可作格式母版、结构参考或仅作内容示例：读 [reference-material-catalog.md](references/reference-material-catalog.md)，不得把有缺陷的旧文件误设为官方精确模板。
@@ -39,6 +40,8 @@ description: 为贵州省及黔东南州中小学教师规划、申报、实施�
 - 生成材料包中的真实照片、原始材料、时间逻辑和建议补充事项总表：读 [attention-items-file.md](references/attention-items-file.md)。每个成套包都必须生成该控制文件。
 
 ## 阶段一：信息采集与选题
+
+开始任何新课题时先执行一次实时官方检索，至少核对目标管理单位、贵州省教育厅、黔东南州公开/正式转发入口和通知指定平台。把检索日期、检索词、查过的官方入口、通知和附件来源写入本项目政策核验输入；未取得当年官方模板时可以选题和建立脚手架，但不得制作`official-exact`终稿或宣称可提交。
 
 一次性收集必要信息；用户未知的项目允许标注“待定”，不得用虚构事实补齐。至少获取：
 
@@ -166,7 +169,7 @@ python scripts/initialize_project_package.py --intake project-intake.json --root
 
 每次生成材料包时，运行`scripts/generate_attention_items.py`从项目主清单生成注意事项文件。把它放在材料包根目录并以`00_`开头；内容至少包含状态快照、阻断/必须/阶段事项、真实照片清单、其他真实原件清单、学科专项真实性与安全核验、时间逻辑检查、增强建议和教师操作顺序。该文件默认仅供负责人内部使用，不冒充官方附件，也不因列出缺件而把缺件写成已经取得。
 
-制作非官方DOCX时调用文档制作能力；若参考文件控制版式，先提炼模板结构再从参考副本生成。正文完成后必须依次运行`resolve_material_format.py`、`apply_docx_format_contract.py`、`audit_docx_style_contract.py`和`audit_docx_format.py`，然后渲染逐页检查：封面、目录、标题层级、字体字号、首行缩进、行距、段前段后、表格宽度、跨页表头、页眉页脚、页码、图片、空白页和签章区。任何一项失败都不得标记`ready`。更新目录域或明确提醒用户在 Word 中更新目录。输出文件名应包含序号、材料名称和版本/日期。
+制作非官方DOCX时调用文档制作能力；若参考文件控制版式，先提炼模板结构再从参考副本生成。写正文时必须显式使用标题/正文语义样式，不能把所有段落先写成Normal再凭外观猜测。正文完成后依次运行`resolve_material_format.py`、`apply_docx_format_contract.py --role-report ...`、`audit_docx_style_contract.py`和`audit_docx_format.py`；短句角色不确定时建立`--role-map`显式指定。审计必须同时通过数值格式和语义角色：疑似标题套正文、正文套标题、缺少主标题/一级标题/正文、标题数量异常均阻断。随后渲染逐页检查封面、目录、标题层级、字体字号、首行缩进、行距、段前段后、表格宽度、跨页表头、页眉页脚、页码、图片、空白页和签章区。任何一项失败都不得标记`ready`。更新目录域或明确提醒用户在 Word 中更新目录。输出文件名应包含序号、材料名称和版本/日期。
 
 `official-exact`材料禁止运行通用套版脚本；必须以实际官方原件作为`--reference`，同时执行结构审计和字体段落合同审计。若没有当年模板，保持`blocked-template`，不得用通用字号猜测。
 
@@ -286,6 +289,14 @@ python scripts/run_project_preflight.py project-manifest.json --root delivery-fo
 
 单项脚本用于定位和修复具体问题；一键预检是宣布“机器审计通过”的统一入口。`qa.*=passed`必须有`qa_records`记录核验日期、方法和报告/审阅人，不能只靠人工改状态。预检报告中的`manual_gates`仍须逐项完成。
 
+一键预检通过后必须把整套材料作为一个ZIP交付，不得只发送散件：
+
+```bash
+python scripts/build_delivery_archive.py --manifest project-manifest.json --root delivery-folder --out 课题名称_整套材料_YYYYMMDD.zip
+```
+
+脚本将再次执行预检，加入便携化预检报告、`SHA256SUMS.txt`和交付摘要，再复开ZIP检查路径、损坏和逐文件哈希。真实数据/照片/签章尚未齐全时只能显式使用`--scaffold`生成工作包，状态必须说明不可直接提交。
+
 任何上游事实变化时，把新主清单设为`batch_mode=incremental`，填写新`snapshot_id`和旧`parent_snapshot_id`，再运行`plan_incremental_refresh.py old.json new.json --out refresh-plan.json`；按报告重新生成所有受影响材料并重做QA，不得仅手改某一个Word标题或Excel单元格。
 
 一键预检同时运行生命周期覆盖审计。`full-lifecycle-kit`至少包含注意事项文件、申报、开题、伦理、工具、编码、原始证据、数据工作簿、诊断分析、干预、实践载体、评价、过程管理、照片台账、证据册、最终报告、结题申请、成果目录、证明/鉴定和交付索引等角色；确实不适用的组必须在`coverage_exemptions`写明理由，不能靠删材料通过。
@@ -297,9 +308,10 @@ python scripts/run_project_preflight.py project-manifest.json --root delivery-fo
 - 每次先说明当前阶段、已知事实、待补事实和本次输出。
 - 内容较多时分批交付，并持续使用同一主清单；不要让用户反复提供已有信息。
 - 明确区分“计划开展”“正在开展”“已经完成”和“取得成效”。
-- 对政策、年度通知、官方模板和现行课程标准进行实时核验并提供来源。
+- 每做一个新课题都重新搜索政策、年度通知、官方模板和现行课程标准并提供来源；登记唯一`search_run_id`和本项目政策快照。最终交付前检索超过7天、附件更新或管理单位变化时再次核验。
 - 保留用户原文件；修订件另存，未经允许不覆盖。
 - 最终交付同时提供材料目录、一致性检查报告和仍需签字/盖章/填入真实数据的事项清单。
+- 最终交付以一个经过完整性和SHA-256校验的ZIP为主交付物，同时报告ZIP哈希和`ready/scaffold`状态；不得让用户自行从零散文件重新拼包。
 - 每个生成材料包根目录必须包含`00_课题材料包注意事项_真实性与待办清单.docx`；无论当前缺件多少都生成，缺件清零时也保留“已核验/无阻断项”记录和非阻断建议。
 - 待人工事项同时列出缺少的真实照片、照片日期/活动信息、拍摄来源、授权、打码要求和应插入的材料位置。
 - 正式交付默认保留内部工作版，并按用途另存报送版、匿名版或公开版；不得把含完整个人信息和学生映射表的工作版直接公开。

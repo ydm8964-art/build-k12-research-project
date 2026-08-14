@@ -1,0 +1,90 @@
+{
+  "search_run_id": "policy-2026-example-replace-per-project",
+  "searched_at": "2026-08-14",
+  "authority": "贵州省教育科学规划领导小组办公室（经黔东南州教育局逐级推荐）",
+  "year": 2026,
+  "official_portals_checked": [
+    "贵州省教育厅通知公告",
+    "贵州省教育厅科学研究栏目",
+    "黔东南州人民政府教育重点领域信息公开栏目",
+    "贵州省教育科研管理平台"
+  ],
+  "search_queries": [
+    "2026 贵州省教育科学规划课题 申报 通知 官方",
+    "2026 黔东南州 教育科学规划课题 申报 通知",
+    "2026 贵州省教育科学规划课题 申请书 活页 汇总表"
+  ],
+  "deadline": "2026-05-09",
+  "submission_mode": "mixed",
+  "required_material_ids": [
+    "M01",
+    "M02"
+  ],
+  "anonymous_required": true,
+  "file_rules": {
+    "max_size_mb": null,
+    "naming_rule": "按平台及州、县、学校补充通知执行",
+    "copies": null,
+    "paper_copies": {
+      "M01": 3,
+      "M02": 1,
+      "unit_summary": 1
+    },
+    "printing": "申请书和活页A3双面印制、中线骑缝装订；汇总表A4"
+  },
+  "external_submission_items": [
+    "学校/县/州统一汇总表及盖章版",
+    "档案袋及申请书封面粘贴件",
+    "贵州省教育科研管理平台线上上传"
+  ],
+  "notice_source_ids": [
+    "POLICY-GZ-2026-ANNUAL"
+  ],
+  "template_source_ids": [
+    "TEMPLATE-GZ-2026-APPLICATION",
+    "TEMPLATE-GZ-2026-BLIND",
+    "TEMPLATE-GZ-2026-SUMMARY"
+  ],
+  "sources": [
+    {
+      "id": "POLICY-GZ-2026-ANNUAL",
+      "title": "省教育厅办公室关于开展2026年贵州省教育科学规划年度课题申报工作的通知",
+      "source_type": "official-notice",
+      "verification_status": "verified",
+      "verified_at": "2026-08-14",
+      "valid_for_year": 2026,
+      "locator": "https://jyt.guizhou.gov.cn/zwgk/tzgg/202601/t20260128_89348284.html",
+      "used_in": ["M01", "M02"]
+    },
+    {
+      "id": "TEMPLATE-GZ-2026-APPLICATION",
+      "title": "附件1：2026年贵州省教育科学规划课题申请书",
+      "source_type": "official-template",
+      "verification_status": "verified",
+      "verified_at": "2026-08-14",
+      "valid_for_year": 2026,
+      "locator": "以官方通知页附件1下载原件为准",
+      "used_in": ["M01"]
+    },
+    {
+      "id": "TEMPLATE-GZ-2026-BLIND",
+      "title": "附件2：课题设计论证活页",
+      "source_type": "official-template",
+      "verification_status": "verified",
+      "verified_at": "2026-08-14",
+      "valid_for_year": 2026,
+      "locator": "以官方通知页附件2下载原件为准",
+      "used_in": ["M02"]
+    },
+    {
+      "id": "TEMPLATE-GZ-2026-SUMMARY",
+      "title": "附件3：贵州省教育科学规划课题申报汇总表",
+      "source_type": "official-template",
+      "verification_status": "verified",
+      "verified_at": "2026-08-14",
+      "valid_for_year": 2026,
+      "locator": "以官方通知页附件3下载原件为准",
+      "used_in": []
+    }
+  ]
+}
