@@ -96,7 +96,8 @@ def build(manifest_path: Path, root: Path, output: Path, *, final: bool = True) 
         "built_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "file_count": len(files),
         "preflight": {"status": report["status"], "error_count": 0, "warning_count": report["warning_count"]},
-        "notice": "ready表示机器预检通过，仍须按preflight-report中的manual_gates完成人工签章/系统核验。"
+        "manual_acceptance": report.get("manual_acceptance", {"status": "pending"}),
+        "notice": "ready表示机器预检和已登记的人工终审均通过；实际上传仍须按通知选择相应报送文件。"
         if final else "本包为scaffold，含待补真实数据/照片/签章事项，不得作为可直接提交终稿。",
     }
     summary_bytes = (json.dumps(summary, ensure_ascii=False, indent=2) + "\n").encode()

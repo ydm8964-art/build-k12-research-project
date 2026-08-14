@@ -7,9 +7,11 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
+from manual_acceptance import invalidate_manual_acceptance, pending_acceptance
 from validate_project_manifest import validate
 
 REQUIRED_INPUT = (
@@ -21,6 +23,14 @@ REQUIRED_INPUT = (
 
 def digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def resolve_inside(root: Path, value: str) -> Path:
+    raw = Path(value).expanduser()
+    actual = raw.resolve() if raw.is_absolute() else (root / raw).resolve()
+    if actual != root and root not in actual.parents:
+        raise ValueError(f"官方附件必须保存在材料包根目录内：{actual}")
+    return actual
 
 
 def verify_input(data: dict) -> None:
@@ -43,13 +53,40 @@ def verify_input(data: dict) -> None:
 
 
 def record(manifest_path: Path, root: Path, input_path: Path) -> Path:
+    manifest_path = manifest_path.resolve()
+    root = root.resolve()
+    if manifest_path.parent != root:
+        raise ValueError("project-manifest.json必须位于材料包根目录")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     policy = json.loads(input_path.read_text(encoding="utf-8"))
     verify_input(policy)
     if policy["year"] != manifest.get("project", {}).get("year"):
         raise ValueError("政策核验年度与project.year不一致")
 
-    target = root.resolve() / "01政策与立项" / f"当年要求核验快照_{policy['year']}_{policy['searched_at']}.json"
+    source_by_id = {str(item["id"]): item for item in policy["sources"] if isinstance(item, dict) and item.get("id")}
+    for source_id in policy["template_source_ids"]:
+        source = source_by_id[str(source_id)]
+        if source.get("source_type") != "official-template":
+            raise ValueError(f"模板来源{source_id}.source_type必须为official-template")
+        local_file = str(source.get("local_file", "")).strip()
+        if not local_file:
+            raise ValueError(f"模板来源{source_id}缺少local_file；必须下载当年官方附件原件")
+        actual = resolve_inside(root, local_file)
+        if not actual.is_file():
+            raise ValueError(f"模板来源{source_id}本地附件不存在：{actual}")
+        if actual.suffix.lower() not in {".doc", ".docx", ".xls", ".xlsx", ".pdf", ".zip"}:
+            raise ValueError(f"模板来源{source_id}附件格式异常：{actual.suffix}")
+        if not str(source.get("retrieved_at", "")).strip():
+            raise ValueError(f"模板来源{source_id}缺少retrieved_at")
+        actual_hash = digest(actual)
+        if str(source.get("source_sha256", "")).lower() != actual_hash:
+            raise ValueError(f"模板来源{source_id}.source_sha256与本地附件不一致")
+        source["local_file"] = str(actual.relative_to(root))
+
+    safe_run_id = re.sub(r"[^A-Za-z0-9._-]+", "-", str(policy["search_run_id"])).strip("-.")
+    if not safe_run_id:
+        raise ValueError("search_run_id不能转换为安全文件名")
+    target = root / "01政策与立项" / f"当年要求核验快照_{policy['year']}_{policy['searched_at']}_{safe_run_id}.json"
     if target.exists():
         raise FileExistsError(f"拒绝覆盖既有政策快照：{target}")
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -76,6 +113,27 @@ def record(manifest_path: Path, root: Path, input_path: Path) -> Path:
     for material in manifest.get("materials", []):
         if isinstance(material, dict) and material.get("id"):
             material["required_for_submission"] = str(material["id"]) in required_ids
+    material_by_id = {
+        str(item.get("id")): item
+        for item in manifest.get("materials", [])
+        if isinstance(item, dict) and item.get("id")
+    }
+    for source_id in policy["template_source_ids"]:
+        source = source_by_id[str(source_id)]
+        for material_id in source.get("used_in", []):
+            material = material_by_id.get(str(material_id))
+            if material is None:
+                raise ValueError(f"模板来源{source_id}.used_in引用不存在的材料：{material_id}")
+            if material.get("format_profile") != "official-exact":
+                raise ValueError(f"模板来源{source_id}不能绑定非official-exact材料{material_id}")
+            template_suffix = Path(str(source["local_file"])).suffix.lower().lstrip(".")
+            if template_suffix != str(material.get("output_format", "")).lower():
+                raise ValueError(
+                    f"模板来源{source_id}文件类型.{template_suffix}与材料{material_id}的"
+                    f"output_format={material.get('output_format')}不一致；不能作为原位填写模板"
+                )
+            material["reference_source_id"] = str(source_id)
+            material["reference_template"] = source["local_file"]
     existing = {
         str(item.get("id")): item
         for item in manifest.get("sources", [])
@@ -87,7 +145,11 @@ def record(manifest_path: Path, root: Path, input_path: Path) -> Path:
         normalized.setdefault("valid_for_year", policy["year"])
         existing[str(item["id"])] = normalized
     manifest["sources"] = list(existing.values())
-    manifest["schema_version"] = "1.5"
+    manifest["schema_version"] = "1.6"
+    if "manual_acceptance" not in manifest:
+        manifest["manual_acceptance"] = pending_acceptance()
+    else:
+        invalidate_manual_acceptance(manifest, "当年政策或官方模板快照已更新")
     errors, _ = validate(manifest)
     if errors:
         target.unlink(missing_ok=True)

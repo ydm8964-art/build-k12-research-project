@@ -85,7 +85,7 @@
 
 ## 四、单批次生成顺序
 
-1. 对本课题重新联网检索当年通知和模板，运行`record_policy_snapshot.py`登记唯一`search_run_id`、检索词、官方入口、通知/附件、时限和哈希，再确定`package_scope`；不得复用上一个课题的快照。
+1. 对本课题重新联网检索当年通知和模板，下载每个官方附件原件并登记本地相对路径、下载日期和SHA-256；运行`record_policy_snapshot.py`登记唯一`search_run_id`、检索词、官方入口、通知/附件、时限和哈希，再确定`package_scope`；不得复用上一个课题的快照。
 2. 冻结项目主清单快照；全部材料只从同一快照取题目、人员、日期、术语和成果名称。
    - 按`project-intake.example.json`建立一次采集信息，运行`initialize_project_package.py`创建26项生命周期主清单、标准目录、注意事项、交付索引和XLSX草稿；初始化文件保持`draft`直至完成视觉与内容QA。
    - 只有基本情况时，先用`project_workflow.py start`生成5—8项候选；用户只需确认一个候选ID。随后用`select`和`initialize`子命令生成主清单与材料任务计划。
@@ -97,8 +97,9 @@
 7. 根据关键研究节点和学科特点生成照片拍摄清单，并在工作版中写入结构化照片ID备注；真实照片到位后批量替换、生成图题和证据册，报送/公开终稿不得残留待插图备注；照片不能替代录音、作品版本、原始测量、代码日志或量规评分。
 8. 按材料用途制作`working/submission/anonymous/public`版本；签章材料保留真人填写区。
 9. 从同一主清单生成根目录`00_课题材料包注意事项_真实性与待办清单.docx`，详细汇总缺失照片、原始材料、学科专项证据与风险、签章、时间冲突、阶段待办和增强建议，并将该文件登记为ready。
-10. 运行生命周期覆盖审计和一键预检；确认每个DOCX均有`docx-style-contract`检查结果，再逐页渲染所有DOCX/PDF、逐表渲染所有XLSX。
-11. 最终运行`build_delivery_archive.py`，交付包含全部目录、政策快照、注意事项、预检报告和SHA-256清单的单一ZIP；同时报告`ready/scaffold`状态、ZIP哈希、缺失真实证据和下一次批量刷新入口。
+10. 运行生命周期覆盖审计和非最终一键预检并清零问题；确认每个DOCX均有`docx-style-contract`结果，再逐页渲染所有DOCX/PDF、逐表渲染所有XLSX。
+11. 按`manual-acceptance-input.example.json`完成五项人工终审，运行`record_manual_acceptance.py`绑定政策、主清单事实和材料哈希，再运行`--final`预检。
+12. 最终运行`build_delivery_archive.py`，交付包含全部目录、政策快照、人工确认、注意事项、预检报告和SHA-256清单的单一ZIP；同时报告`ready/scaffold`状态、ZIP哈希、缺失真实证据和下一次批量刷新入口。
 
 每批材料完成后运行`refresh_package_controls.py`，从当前主清单重生根目录注意事项和交付索引；该动作会把两个控制文件降为`draft`并清空旧QA，必须重新完成逐页/内容/隐私QA并登记。不得继续交付初始化时的过期状态表。
 

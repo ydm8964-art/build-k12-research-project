@@ -1,0 +1,26 @@
+{
+  "reviewed_at": "2026-08-14T16:00:00+08:00",
+  "reviewer": "课题负责人或指定终审人",
+  "gates": {
+    "policy-and-submission": {
+      "status": "passed",
+      "note": "已打开当年通知、官方附件和报送入口，逐项核对截止时间、份数、命名、装订及签章要求"
+    },
+    "docx-pdf-visual": {
+      "status": "passed",
+      "note": "已渲染并逐页检查全部DOCX/PDF，目录、页码、标题、表格、图片、题注和打印版式无异常"
+    },
+    "xlsx-reconciliation": {
+      "status": "passed",
+      "note": "已逐工作表检查并复算公式，Word/PDF中的样本量、频数、比例和图表与工作簿一致"
+    },
+    "evidence-privacy-authorship": {
+      "status": "passed",
+      "note": "已核对照片与原始证据真实性、人物授权和打码、学科事实、作者贡献及公开范围"
+    },
+    "attention-and-signature": {
+      "status": "passed",
+      "note": "已逐条处理注意事项，确认签字盖章、线下原件、责任人、完成时间和报送前操作"
+    }
+  }
+}

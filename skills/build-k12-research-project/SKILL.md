@@ -37,11 +37,12 @@ description: 为贵州省及黔东南州中小学教师规划、申报、实施�
 - 涉及时政、地图、实验原理、跨学科知识、乡土文化、课例作者、外部协作者、案例实施状态或策略效果：读 [subject-authorship-and-implementation.md](references/subject-authorship-and-implementation.md)。
 - 生成任何学科的选题、工具、课例、证据或注意事项文件：读 [subject-specific-evidence.md](references/subject-specific-evidence.md)，采用“通用底座＋学科专项清单”；跨学科课题同时核验主学科和实际关联学科。
 - 组装正式报送/结题文件夹、核销承诺成果或宣布“整套可直接提交”：读 [package-finalization.md](references/package-finalization.md)。
+- 最终逐页/逐表人工终审：按[人工终审输入示例](references/manual-acceptance-input.example.json)登记五项确认；该确认绑定政策快照、主清单研究事实和全部材料哈希，任何后续变更都会使其失效。
 - 生成材料包中的真实照片、原始材料、时间逻辑和建议补充事项总表：读 [attention-items-file.md](references/attention-items-file.md)。每个成套包都必须生成该控制文件。
 
 ## 阶段一：信息采集与选题
 
-开始任何新课题时先执行一次实时官方检索，至少核对目标管理单位、贵州省教育厅、黔东南州公开/正式转发入口和通知指定平台。把检索日期、检索词、查过的官方入口、通知和附件来源写入本项目政策核验输入；未取得当年官方模板时可以选题和建立脚手架，但不得制作`official-exact`终稿或宣称可提交。
+开始任何新课题时先执行一次实时官方检索，至少核对目标管理单位、贵州省教育厅、黔东南州公开/正式转发入口和通知指定平台。把检索日期、检索词、查过的官方入口、通知和附件来源写入本项目政策核验输入；每个官方模板必须下载到本项目`01政策与立项/官方模板/`，登记相对路径、下载日期和SHA-256。未取得可核验的当年模板原件时可以选题和建立脚手架，但不得制作`official-exact`终稿或宣称可提交。
 
 一次性收集必要信息；用户未知的项目允许标注“待定”，不得用虚构事实补齐。至少获取：
 
@@ -281,13 +282,15 @@ python scripts/audit_project_package.py project-manifest.json --root delivery-fo
 
 文件夹审计通过仍不替代学科专家、真实数据、逐页渲染、签章和当年报送系统检查。
 
-正式交付优先运行一键预检，让主清单、文件夹、每份DOCX内容与格式、XLSX工作表与公式结构、案例状态和照片证据在同一次运行中接受实际检查，并保存机器报告：
+正式交付先运行一键预检的非最终模式并把错误、警告全部清零，再完成五项人工终审并登记确认；最后运行`--final`，让主清单、文件夹、每份DOCX内容与格式、XLSX工作表与公式结构、案例状态、照片证据和人工确认在同一次运行中接受检查：
 
 ```bash
+python scripts/run_project_preflight.py project-manifest.json --root delivery-folder --report-json pre-attestation-report.json
+python scripts/record_manual_acceptance.py --manifest project-manifest.json --root delivery-folder --input manual-acceptance.json
 python scripts/run_project_preflight.py project-manifest.json --root delivery-folder --final --report-json preflight-report.json
 ```
 
-单项脚本用于定位和修复具体问题；一键预检是宣布“机器审计通过”的统一入口。`qa.*=passed`必须有`qa_records`记录核验日期、方法和报告/审阅人，不能只靠人工改状态。预检报告中的`manual_gates`仍须逐项完成。
+单项脚本用于定位和修复具体问题；一键预检是宣布“机器审计通过”的统一入口。`qa.*=passed`必须有`qa_records`记录核验日期、方法和报告/审阅人，不能只靠人工改状态。人工确认必须五项全部为`passed`且写明核验说明；它绑定当前政策快照、规范化主清单哈希和材料哈希，之后修改任何材料、政策或控制文件都必须重新终审。
 
 一键预检通过后必须把整套材料作为一个ZIP交付，不得只发送散件：
 

@@ -15,6 +15,7 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 from audit_common import PLACEHOLDER_RE, cli_failed
+from manual_acceptance import MANUAL_GATES, manifest_review_sha256
 from validate_project_manifest import validate as validate_manifest
 
 READY_STATUSES = {"ready", "submitted", "archived"}
@@ -189,8 +190,10 @@ def audit(manifest_path: Path, root: Path, final: bool) -> tuple[list[str], list
     material_by_id = {str(item.get("id")): item for item in materials if item.get("id")}
     actual_paths: dict[str, Path] = {}
     hash_to_ids: dict[str, list[str]] = defaultdict(list)
+    policy_template_paths: set[Path] = set()
 
     requirements = data.get("submission_requirements", {})
+    manual_attestation: dict | None = None
     if final:
         if not isinstance(requirements, dict) or requirements.get("status") != "verified":
             errors.append("当年申报/结题通知与模板尚未形成verified要求快照")
@@ -233,6 +236,21 @@ def audit(manifest_path: Path, root: Path, final: bool) -> tuple[list[str], list
             for source_id in set(notice_ids + template_ids):
                 if sources.get(str(source_id), {}).get("verification_status") != "verified":
                     errors.append(f"当年要求快照引用的来源{source_id}尚未核验")
+            for source_id in template_ids:
+                source = sources.get(str(source_id), {})
+                local_file = source.get("local_file")
+                if not local_file:
+                    errors.append(f"官方模板来源{source_id}缺少本地附件副本")
+                    continue
+                template_path, inside = resolve_material_path(root, str(local_file))
+                if not inside:
+                    errors.append(f"官方模板来源{source_id}不在交付根目录内：{template_path}")
+                elif not template_path.is_file():
+                    errors.append(f"官方模板来源{source_id}本地附件不存在：{template_path}")
+                elif str(source.get("source_sha256", "")).lower() != sha256(template_path):
+                    errors.append(f"官方模板来源{source_id}本地附件SHA-256不一致")
+                else:
+                    policy_template_paths.add(template_path.resolve())
             required_ids = requirements.get("required_material_ids", [])
             if not isinstance(required_ids, list):
                 required_ids = []
@@ -240,6 +258,42 @@ def audit(manifest_path: Path, root: Path, final: bool) -> tuple[list[str], list
                 material = material_by_id.get(str(material_id), {})
                 if material.get("status") not in READY_STATUSES:
                     errors.append(f"当年必交材料{material_id}尚未就绪：{material.get('status', '不存在')}")
+
+        acceptance = data.get("manual_acceptance", {})
+        if not isinstance(acceptance, dict) or acceptance.get("status") != "verified":
+            errors.append("最终交付缺少有效人工终审确认；必须逐页、逐表、证据与签章核验后登记")
+        else:
+            attestation_value = acceptance.get("attestation_file")
+            if not attestation_value:
+                errors.append("人工终审确认缺少attestation_file")
+            else:
+                attestation_path, inside = resolve_material_path(root, str(attestation_value))
+                if not inside:
+                    errors.append(f"人工终审确认不在交付根目录内：{attestation_path}")
+                elif not attestation_path.is_file():
+                    errors.append(f"人工终审确认文件不存在：{attestation_path}")
+                elif str(acceptance.get("attestation_sha256", "")).lower() != sha256(attestation_path):
+                    errors.append("人工终审确认文件SHA-256与主清单不一致")
+                else:
+                    try:
+                        manual_attestation = json.loads(attestation_path.read_text(encoding="utf-8"))
+                    except (OSError, json.JSONDecodeError) as exc:
+                        errors.append(f"人工终审确认文件无法读取：{exc}")
+            if manual_attestation is not None:
+                gates = manual_attestation.get("gates", {})
+                if not isinstance(gates, dict) or set(gates) != set(MANUAL_GATES):
+                    errors.append("人工终审确认的门槛集合不完整或已过期")
+                else:
+                    for gate_id in MANUAL_GATES:
+                        gate = gates.get(gate_id, {})
+                        if not isinstance(gate, dict) or gate.get("status") != "passed" or not str(gate.get("note", "")).strip():
+                            errors.append(f"人工终审门槛{gate_id}未通过或缺少核验说明")
+                if manual_attestation.get("snapshot_id") != data.get("generation_contract", {}).get("snapshot_id"):
+                    errors.append("人工终审确认绑定的主清单snapshot_id已变化")
+                if manual_attestation.get("manifest_review_sha256") != manifest_review_sha256(data):
+                    errors.append("人工终审确认绑定的主清单研究事实已变化")
+                if manual_attestation.get("policy_snapshot_sha256") != requirements.get("policy_snapshot_sha256"):
+                    errors.append("人工终审确认绑定的政策快照已变化")
 
     for item in materials:
         material_id = str(item.get("id", "未编号"))
@@ -310,6 +364,17 @@ def audit(manifest_path: Path, root: Path, final: bool) -> tuple[list[str], list
         if len(ids) > 1:
             warnings.append(f"材料{ids}文件内容完全相同（SHA-256={digest[:12]}…），请核对是否重复交付")
 
+    if final and manual_attestation is not None:
+        attested_hashes = manual_attestation.get("material_hashes", {})
+        current_hashes = {
+            str(item.get("id")): sha256(actual_paths[str(item.get("id"))])
+            for item in materials
+            if item.get("included_in_batch") is not False
+            and str(item.get("id")) in actual_paths
+        }
+        if not isinstance(attested_hashes, dict) or attested_hashes != current_hashes:
+            errors.append("人工终审确认绑定的材料集合或文件SHA-256已变化；必须重新人工终审")
+
     generation = data.get("generation_contract", {})
     closing_audit = final and isinstance(generation, dict) and (
         generation.get("package_scope") == "closing-kit"
@@ -368,7 +433,7 @@ def audit(manifest_path: Path, root: Path, final: bool) -> tuple[list[str], list
 
     registered = {path.resolve() for path in actual_paths.values() if path.exists()} | {
         path.resolve() for path in evidence_paths if path.exists()
-    }
+    } | policy_template_paths
     try:
         manifest_resolved = manifest_path.resolve()
         for path in root.rglob("*"):

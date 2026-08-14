@@ -17,6 +17,7 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Mm
 from generate_attention_items import build_document as build_attention_document
+from manual_acceptance import pending_acceptance
 from project_blueprint import FOLDERS, materials_for_scope
 from validate_project_manifest import validate
 
@@ -95,12 +96,13 @@ def build_manifest(intake: dict) -> dict:
     requirements.setdefault("file_rules", {"max_size_mb": None, "naming_rule": None, "copies": None})
 
     manifest = {
-        "schema_version": "1.5",
+        "schema_version": "1.6",
         "project": intake["project"],
         "project_context": intake.get("project_context", {}),
         "problem_context": intake.get("problem_context", {}),
         "governance": intake["governance"],
         "generation_contract": generation,
+        "manual_acceptance": pending_acceptance(),
         "submission_requirements": requirements,
         "contributors": intake.get("contributors", []),
         "subject_coverage": intake.get("subject_coverage", []),

@@ -18,6 +18,7 @@ from audit_photo_evidence import audit as audit_photo
 from audit_project_package import audit as audit_package
 from audit_xlsx_structure import audit as audit_xlsx
 from audit_xlsx_style_contract import audit as audit_xlsx_style_contract
+from manual_acceptance import MANUAL_GATES
 
 
 def resolve_path(root: Path, value: str | None) -> Path | None:
@@ -148,7 +149,7 @@ def run(manifest_path: Path, root: Path, final: bool) -> dict:
     warning_count = sum(len(item["warnings"]) for item in checks)
     strict_failure = bool(error_count or (final and warning_count))
     return {
-        "schema_version": "1.3",
+        "schema_version": "1.4",
         "run_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "manifest": str(manifest_path),
         "root": str(root),
@@ -157,12 +158,14 @@ def run(manifest_path: Path, root: Path, final: bool) -> dict:
         "error_count": error_count,
         "warning_count": warning_count,
         "checks": checks,
+        "manual_acceptance": data.get("manual_acceptance", {"status": "pending"}),
         "manual_gates": [
-            "确认本课题已重新联网检索官方通知和附件；核对search_run_id、7日新鲜度、报送系统、限额、命名、份数、签章和截止时间",
-            "DOCX/PDF逐页渲染检查并更新目录、页码、题注和交叉引用",
-            "XLSX逐工作表视觉检查、公式复算及Word/PDF数值回查",
-            "照片真实性、人物授权/打码、学科事实、署名与签章人工复核",
-            "打开00_课题材料包注意事项文件，逐条确认责任人、最迟时间、完成标准和已解决事项",
+            {
+                "id": gate_id,
+                "description": description,
+                "status": "attested" if data.get("manual_acceptance", {}).get("status") == "verified" else "pending",
+            }
+            for gate_id, description in MANUAL_GATES.items()
         ],
     }
 

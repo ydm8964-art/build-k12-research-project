@@ -11,6 +11,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from manual_acceptance import invalidate_manual_acceptance
 from validate_project_manifest import QA_KEYS, validate
 
 READY = {"ready", "submitted", "archived"}
@@ -80,6 +81,8 @@ def register(
             qa[key] = value.get("status")
             if qa[key] == "passed":
                 qa_records[key] = {name: value.get(name) for name in ("checked_at", "method", "report_path", "reviewer")}
+
+    invalidate_manual_acceptance(data, f"材料{material_id}文件或状态发生变化")
 
     errors, warnings = validate(data)
     if errors:

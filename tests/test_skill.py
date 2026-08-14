@@ -38,6 +38,7 @@ import generate_topic_candidates  # noqa: E402
 import initialize_project_package  # noqa: E402
 import plan_incremental_refresh  # noqa: E402
 import project_workflow  # noqa: E402
+import record_manual_acceptance  # noqa: E402
 import record_policy_snapshot  # noqa: E402
 import refresh_package_controls  # noqa: E402
 import register_material_file  # noqa: E402
@@ -229,7 +230,8 @@ class SkillTests(unittest.TestCase):
                 final = run_project_preflight.run(manifest, root, final=True)
             self.assertEqual(working["status"], "passed")
             self.assertEqual(final["status"], "failed")
-            self.assertEqual(final["schema_version"], "1.3")
+            self.assertEqual(final["schema_version"], "1.4")
+            self.assertEqual({item["id"] for item in final["manual_gates"]}, set(record_manual_acceptance.MANUAL_GATES))
 
     def test_initializer_creates_full_lifecycle_scaffold(self) -> None:
         intake_path = SKILL / "references" / "project-intake.example.json"
@@ -237,7 +239,8 @@ class SkillTests(unittest.TestCase):
             root = Path(directory) / "示例材料包"
             manifest_path = initialize_project_package.initialize(intake_path, root, SKILL)
             data = json.loads(manifest_path.read_text(encoding="utf-8"))
-            self.assertEqual(data["schema_version"], "1.5")
+            self.assertEqual(data["schema_version"], "1.6")
+            self.assertEqual(data["manual_acceptance"]["status"], "pending")
             self.assertEqual(len(data["materials"]), 26)
             self.assertTrue(all(item["included_in_batch"] for item in data["materials"]))
             self.assertEqual(data["materials"][0]["status"], "draft")
@@ -321,6 +324,8 @@ class SkillTests(unittest.TestCase):
                 "id": "TEMPLATE-2026-01", "title": "2026年度官方模板", "source_type": "official-template",
                 "verification_status": "verified", "verified_at": "2026-08-12", "valid_for_year": 2026,
                 "locator": "https://example.gov.cn/official-template", "used_in": ["M01"],
+                "local_file": "01政策与立项/2026年度官方模板.docx", "retrieved_at": "2026-08-12",
+                "source_sha256": "b" * 64,
             },
         ]
         manifest["submission_requirements"].update(
@@ -339,6 +344,17 @@ class SkillTests(unittest.TestCase):
         errors, _ = validate_project_manifest.validate(manifest)
         self.assertTrue(any("超过7天" in value for value in errors), errors)
 
+    def test_application_ready_is_blocked_after_deadline(self) -> None:
+        data = copy.deepcopy(self.example)
+        data["generation_contract"].update(
+            {"package_scope": "application-kit", "delivery_state": "application-ready", "truth_state": "planning"}
+        )
+        data["submission_requirements"].update(
+            {"status": "verified", "deadline": "2026-08-01", "searched_at": "2026-08-12"}
+        )
+        errors, _ = validate_project_manifest.validate(data)
+        self.assertTrue(any("申报截止日" in value and "application-ready" in value for value in errors), errors)
+
     def test_record_policy_snapshot_writes_hashed_project_file(self) -> None:
         intake = SKILL / "references" / "project-intake.example.json"
         policy_example = json.loads(
@@ -352,6 +368,18 @@ class SkillTests(unittest.TestCase):
             base = Path(directory)
             root = base / "package"
             manifest_path = initialize_project_package.initialize(intake, root, SKILL)
+            template_source = SKILL / "assets" / "templates" / "research-form.docx"
+            for index, source in enumerate(
+                [item for item in policy_example["sources"] if item["id"] in policy_example["template_source_ids"]],
+                1,
+            ):
+                target = root / "01政策与立项" / f"official-template-{index}.docx"
+                target.write_bytes(template_source.read_bytes())
+                source.update(
+                    local_file=str(target.relative_to(root)),
+                    source_sha256=record_policy_snapshot.digest(target),
+                    retrieved_at="2026-08-12",
+                )
             policy_input = base / "policy.json"
             policy_input.write_text(json.dumps(policy_example, ensure_ascii=False), encoding="utf-8")
             snapshot = record_policy_snapshot.record(manifest_path, root, policy_input)
@@ -360,8 +388,37 @@ class SkillTests(unittest.TestCase):
             self.assertEqual(requirements["status"], "verified")
             self.assertEqual(requirements["policy_snapshot_file"], str(snapshot.relative_to(root.resolve())))
             self.assertEqual(requirements["policy_snapshot_sha256"], record_policy_snapshot.digest(snapshot))
+            self.assertEqual(manifest["schema_version"], "1.6")
+            self.assertTrue(manifest["materials"][1]["reference_template"])
             errors, _ = validate_project_manifest.validate(manifest)
             self.assertEqual(errors, [])
+
+            manual_input = base / "manual.json"
+            manual_input.write_text(
+                json.dumps(
+                    {
+                        "reviewed_at": "2026-08-12T16:00:00+08:00",
+                        "reviewer": "课题负责人",
+                        "gates": {
+                            gate_id: {"status": "passed", "note": f"已逐项复核：{description}"}
+                            for gate_id, description in record_manual_acceptance.MANUAL_GATES.items()
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            attestation = record_manual_acceptance.record(manifest_path, root, manual_input)
+            self.assertTrue(attestation.is_file())
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(manifest["manual_acceptance"]["status"], "verified")
+            manifest["project"]["school"] = "变更后的示例学校"
+            manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+            final_errors, _ = audit_project_package.audit(manifest_path, root, final=True)
+            self.assertTrue(any("主清单研究事实已变化" in value for value in final_errors), final_errors)
+            refresh_package_controls.refresh(manifest_path)
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(manifest["manual_acceptance"]["status"], "expired")
 
     def test_scaffold_delivery_archive_contains_preflight_and_checksums(self) -> None:
         intake = SKILL / "references" / "project-intake.example.json"
@@ -378,6 +435,14 @@ class SkillTests(unittest.TestCase):
                 self.assertIn("project-manifest.json", names)
                 self.assertIn("交付校验/preflight-report.json", names)
                 self.assertIn("交付校验/SHA256SUMS.txt", names)
+
+    def test_final_package_requires_manual_acceptance(self) -> None:
+        intake = SKILL / "references" / "project-intake.example.json"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "package"
+            manifest = initialize_project_package.initialize(intake, root, SKILL)
+            errors, _ = audit_project_package.audit(manifest, root, final=True)
+            self.assertTrue(any("人工终审确认" in value for value in errors), errors)
 
     def test_excluded_official_forms_do_not_create_scope_warnings(self) -> None:
         intake = json.loads((SKILL / "references" / "project-intake.example.json").read_text(encoding="utf-8"))
