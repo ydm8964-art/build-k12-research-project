@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Add standards-compliant frozen panes after artifact-tool XLSX export."""
+"""Normalize frozen panes and the portable default font after artifact-tool XLSX export."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ MAIN_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 ET.register_namespace("x", MAIN_NS)
 
 
-def normalize(path: Path, freeze_rows: int) -> None:
+def normalize(path: Path, freeze_rows: int, default_font: str | None = None) -> None:
     if freeze_rows < 1:
         raise ValueError("freeze_rows必须大于0")
     with zipfile.ZipFile(path) as source:
@@ -26,6 +26,17 @@ def normalize(path: Path, freeze_rows: int) -> None:
     changed = 0
     output_entries: list[tuple[zipfile.ZipInfo, bytes]] = []
     for info, content in entries:
+        if info.filename == "xl/styles.xml" and default_font:
+            root = ET.fromstring(content)
+            fonts = root.find(f"{{{MAIN_NS}}}fonts")
+            first_font = fonts.find(f"{{{MAIN_NS}}}font") if fonts is not None else None
+            if first_font is None:
+                raise ValueError("styles.xml缺少默认字体记录")
+            name = first_font.find(f"{{{MAIN_NS}}}name")
+            if name is None:
+                name = ET.SubElement(first_font, f"{{{MAIN_NS}}}name")
+            name.set("val", default_font)
+            content = ET.tostring(root, encoding="utf-8", xml_declaration=True)
         if info.filename.startswith("xl/worksheets/") and info.filename.endswith(".xml"):
             root = ET.fromstring(content)
             sheet_views = root.find(f"{{{MAIN_NS}}}sheetViews")
@@ -77,9 +88,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("xlsx", type=Path)
     parser.add_argument("--freeze-rows", type=int, default=3)
+    parser.add_argument("--default-font")
     args = parser.parse_args()
-    normalize(args.xlsx, args.freeze_rows)
-    print(f"已为工作表设置冻结前{args.freeze_rows}行：{args.xlsx}")
+    normalize(args.xlsx, args.freeze_rows, args.default_font)
+    font_text = f"，默认字体{args.default_font}" if args.default_font else ""
+    print(f"已为工作表设置冻结前{args.freeze_rows}行{font_text}：{args.xlsx}")
     return 0
 
 

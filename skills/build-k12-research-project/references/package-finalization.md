@@ -69,6 +69,30 @@
 python scripts/run_project_preflight.py project-manifest.json --root delivery-folder --final --report-json preflight-report.json
 ```
 
-一键预检实际调用主清单、文件夹、DOCX内容、DOCX格式、XLSX结构/公式、案例和照片审计，检查缺件、路径、格式、哈希、状态、承诺、依赖、占位符、批注/修订/外链、必需工作表、公式错误、筛选/冻结窗格及PDF基本可用性。单项脚本只用于问题定位。机器通过后仍需人工逐页查看、核对数据计算、照片授权、学科事实、签章和实际报送系统要求，并在`qa_records`留痕。
+一键预检实际调用主清单、文件夹、DOCX内容、DOCX格式、XLSX结构/公式、案例和照片审计，检查缺件、路径、格式、哈希、状态、承诺、依赖、占位符、批注/修订/外链、必需工作表、公式错误、筛选/冻结窗格及PDF基本可用性。单项脚本只用于问题定位。机器检查清零后仍需人工逐页查看、核对数据计算、照片授权、学科事实、签章和实际报送系统要求。按[人工终审输入示例](manual-acceptance-input.example.json)填写五项确认，再运行：
+
+```bash
+python scripts/record_manual_acceptance.py \
+  --manifest delivery-folder/project-manifest.json \
+  --root delivery-folder \
+  --input manual-acceptance.json
+```
+
+确认文件绑定当前政策快照SHA-256、主清单研究事实哈希、主清单快照ID和所有实际材料哈希。登记后改动材料、政策快照、注意事项、交付索引或研究事实，最终预检会判定旧确认失效，必须重新人工终审。未登记有效确认时，`--final`和正式ZIP均被阻断。
 
 最终交付附四项：材料目录与状态、当年要求快照、预检报告、`00_课题材料包注意事项_真实性与待办清单.docx`。注意事项文件必须从当前主清单自动重建，区分当前阻断、必须补充、阶段待办和建议增强，并列清真实照片、原始记录/数据、主学科及关联学科专项证据/风险、证明、签章和时间逻辑。任何当前阻断项未清零，或警告未处置时，不使用“整套可直接提交”。
+
+## 八、整套压缩包交付
+
+不得只把若干散落Word发给用户。完成控制文件刷新、文件登记和一键预检后，统一生成一个ZIP：
+
+```bash
+python scripts/build_delivery_archive.py \
+  --manifest delivery-folder/project-manifest.json \
+  --root delivery-folder \
+  --out 课题名称_整套材料_YYYYMMDD.zip
+```
+
+默认模式要求最终预检零错误、零未处置警告，并校验当年政策快照、官方模板本地副本、必交材料、文件哈希、QA记录和人工终审确认；不满足时拒绝打包。确需先交工作骨架时显式增加`--scaffold`，包内状态写为`scaffold`，不得称为可直接提交。
+
+ZIP保留材料包相对目录，并自动加入`交付校验/preflight-report.json`、`SHA256SUMS.txt`和`package-summary.json`。生成后重新打开ZIP执行完整性、路径安全和逐文件哈希校验。最终向用户同时交付ZIP文件、ZIP的SHA-256和一句明确状态说明；散件仅作为可选预览，不替代整包。

@@ -9,6 +9,9 @@ import sys
 from datetime import date, datetime
 from pathlib import Path
 
+from format_contracts import load_contracts, material_contract
+from manual_acceptance import ACCEPTANCE_STATUSES
+
 REQUIRED_PROJECT = ("title", "leader", "school", "subject", "stage")
 FORMAT_PROFILES = {
     "official-exact",
@@ -97,7 +100,7 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
     schema_version = str(data.get("schema_version", "1.1"))
-    if schema_version not in {"1.1", "1.2", "1.3"}:
+    if schema_version not in {"1.1", "1.2", "1.3", "1.4", "1.5", "1.6"}:
         errors.append(f"schema_version不受支持：{schema_version!r}")
     project = data.get("project")
     if not isinstance(project, dict):
@@ -114,7 +117,7 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
 
     project_context = data.get("project_context", {})
     problem_context = data.get("problem_context", {})
-    if schema_version == "1.3":
+    if schema_version in {"1.3", "1.4", "1.5", "1.6"}:
         if not isinstance(project_context, dict):
             errors.append("project_context 必须是对象")
             project_context = {}
@@ -163,7 +166,7 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
         errors.append("generation_contract.batch_mode 缺少有效值")
     if generation.get("unknown_handling") not in UNKNOWN_HANDLING:
         errors.append("generation_contract.unknown_handling 缺少有效值")
-    if schema_version in {"1.2", "1.3"} or generation.get("batch_mode") == "incremental":
+    if schema_version in {"1.2", "1.3", "1.4", "1.5", "1.6"} or generation.get("batch_mode") == "incremental":
         if not str(generation.get("snapshot_id", "")).strip():
             errors.append("generation_contract.snapshot_id 不能为空")
         generated_at = str(generation.get("generated_at", "")).strip()
@@ -215,6 +218,34 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
     if delivery_state in scope_rules and package_scope not in scope_rules[delivery_state]:
         errors.append(f"delivery_state为{delivery_state}时，package_scope不应为{package_scope!r}")
 
+    manual_acceptance = data.get("manual_acceptance")
+    if schema_version == "1.6" and not isinstance(manual_acceptance, dict):
+        errors.append("schema 1.6必须包含manual_acceptance对象")
+        manual_acceptance = {}
+    elif manual_acceptance is not None and not isinstance(manual_acceptance, dict):
+        errors.append("manual_acceptance必须是对象")
+        manual_acceptance = {}
+    if isinstance(manual_acceptance, dict) and manual_acceptance:
+        acceptance_status = manual_acceptance.get("status")
+        if acceptance_status not in ACCEPTANCE_STATUSES:
+            errors.append("manual_acceptance.status必须是pending/verified/expired")
+        if acceptance_status == "verified":
+            for key in ("reviewed_at", "reviewer", "attestation_file"):
+                if not str(manual_acceptance.get(key, "")).strip():
+                    errors.append(f"manual_acceptance已核验，但缺少{key}")
+            if not valid_sha256(manual_acceptance.get("attestation_sha256")):
+                errors.append("manual_acceptance已核验，但attestation_sha256不是64位SHA-256")
+            reviewed_at = str(manual_acceptance.get("reviewed_at", ""))
+            if reviewed_at:
+                try:
+                    reviewed_time = datetime.fromisoformat(reviewed_at)
+                    if reviewed_time.tzinfo is None:
+                        errors.append("manual_acceptance.reviewed_at必须包含时区")
+                except ValueError:
+                    errors.append("manual_acceptance.reviewed_at必须是ISO 8601日期时间")
+        if acceptance_status == "expired" and not str(manual_acceptance.get("invalidation_reason", "")).strip():
+            errors.append("manual_acceptance已失效，但缺少invalidation_reason")
+
     contributors = data.get("contributors", [])
     if not isinstance(contributors, list) or not contributors:
         errors.append("contributors 至少包含负责人")
@@ -237,7 +268,7 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
             errors.append(f"contributors[{index}].is_approved_member 必须是布尔值")
 
     subject_coverage = data.get("subject_coverage", [])
-    if schema_version in {"1.2", "1.3"} and (not isinstance(subject_coverage, list) or not subject_coverage):
+    if schema_version in {"1.2", "1.3", "1.4", "1.5", "1.6"} and (not isinstance(subject_coverage, list) or not subject_coverage):
         errors.append("subject_coverage 至少登记主学科的研究功能、课标范围和复核责任")
         subject_coverage = []
     elif not isinstance(subject_coverage, list):
@@ -563,6 +594,9 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
     material_ids = {str(item.get("id")) for item in material_items}
     if len(material_ids) != len(material_items):
         errors.append("materials 存在重复 id")
+    contract_catalog = load_contracts()
+    known_contracts = set(contract_catalog["profiles"])
+    expected_contracts = contract_catalog["materials"]
 
     requirements = data.get("submission_requirements")
     if not isinstance(requirements, dict):
@@ -597,12 +631,36 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
                 errors.append(f"submission_requirements.{key} 引用了不存在的ID：{value}")
 
     if requirement_status == "verified":
+        searched_day = None
+        deadline_day = None
+        if not str(requirements.get("search_run_id", "")).strip():
+            errors.append("submission_requirements 已核验，但缺少本项目唯一search_run_id；每次做课题必须重新检索")
+        if not requirements.get("searched_at"):
+            errors.append("submission_requirements 已核验，但缺少searched_at")
+        else:
+            searched_day = parse_day(str(requirements.get("searched_at")), "submission_requirements.searched_at", errors)
+        portals = requirements.get("official_portals_checked", [])
+        queries = requirements.get("search_queries", [])
+        if not isinstance(portals, list) or not portals or any(not str(value).strip() for value in portals):
+            errors.append("submission_requirements 已核验，但official_portals_checked不是非空数组")
+        if not isinstance(queries, list) or not queries or any(not str(value).strip() for value in queries):
+            errors.append("submission_requirements 已核验，但search_queries不是非空数组")
+        if not str(requirements.get("policy_snapshot_file", "")).strip():
+            errors.append("submission_requirements 已核验，但缺少policy_snapshot_file")
+        if not valid_sha256(requirements.get("policy_snapshot_sha256")):
+            errors.append("submission_requirements 已核验，但policy_snapshot_sha256不是64位SHA-256")
+        if current_day and searched_day and (current_day - searched_day).days > 7:
+            errors.append(
+                f"本项目官方要求检索已超过7天（{searched_day}→{current_day}）；交付前必须重新联网核验"
+            )
+        if current_day and searched_day and searched_day > current_day:
+            errors.append("submission_requirements.searched_at不能晚于governance.current_date")
         if not requirements.get("verified_at"):
             errors.append("submission_requirements 已核验，但缺少 verified_at")
         else:
             parse_day(str(requirements.get("verified_at")), "submission_requirements.verified_at", errors)
         if requirements.get("deadline"):
-            parse_day(str(requirements.get("deadline")), "submission_requirements.deadline", errors)
+            deadline_day = parse_day(str(requirements.get("deadline")), "submission_requirements.deadline", errors)
         if not notice_source_ids:
             errors.append("submission_requirements 已核验，但 notice_source_ids 为空")
         if not template_source_ids:
@@ -613,6 +671,28 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
                 errors.append(f"submission_requirements 已核验，但来源{source_id}尚未标记verified")
             if requirement_year and source.get("valid_for_year") not in {None, requirement_year}:
                 errors.append(f"来源{source_id}适用年度与submission_requirements.year不一致")
+        if schema_version == "1.6":
+            for source_id in template_source_ids:
+                source = source_items.get(str(source_id), {})
+                if source.get("source_type") != "official-template":
+                    errors.append(f"模板来源{source_id}.source_type必须为official-template")
+                for key in ("local_file", "retrieved_at"):
+                    if not str(source.get(key, "")).strip():
+                        errors.append(f"模板来源{source_id}缺少{key}，必须保存本项目官方附件副本")
+                if not valid_sha256(source.get("source_sha256")):
+                    errors.append(f"模板来源{source_id}.source_sha256不是64位SHA-256")
+        if deadline_day and current_day and current_day > deadline_day:
+            required_items = [item for item in material_items if item.get("id") in set(required_material_ids)]
+            already_submitted = bool(required_items) and all(
+                item.get("status") in {"submitted", "archived"} for item in required_items
+            )
+            if delivery_state == "application-ready" and not already_submitted:
+                errors.append(
+                    f"申报截止日{deadline_day}已过，不能继续标记application-ready；"
+                    "应登记已提交/归档、补充获批延期，或改为scaffold"
+                )
+            elif delivery_state == "application-scaffold" and not already_submitted:
+                warnings.append(f"申报截止日{deadline_day}已过；本包只能作为历史/下一轮工作稿，不能宣称可提交")
     elif requirement_status == "expired":
         warnings.append("当年报送要求快照已过期；不得据此制作可直接提交版本")
     for index, item in enumerate(materials, 1):
@@ -633,6 +713,23 @@ def validate(data: dict) -> tuple[list[str], list[str]]:
         format_profile = item.get("format_profile")
         if format_profile not in FORMAT_PROFILES:
             errors.append(f"材料 {item.get('id', index)} 缺少有效 format_profile")
+        format_contract_id = str(item.get("format_contract_id", "")).strip()
+        if schema_version in {"1.4", "1.5", "1.6"} and not format_contract_id:
+            errors.append(f"材料 {item.get('id', index)} 缺少固定 format_contract_id")
+        if format_contract_id and format_contract_id not in known_contracts:
+            errors.append(f"材料 {item.get('id', index)} 使用未知format_contract_id：{format_contract_id}")
+        expected_contract_id = expected_contracts.get(str(item.get("id", "")))
+        if format_contract_id and expected_contract_id and format_contract_id != expected_contract_id:
+            errors.append(
+                f"材料 {item.get('id', index)} 的format_contract_id应为{expected_contract_id}，实际为{format_contract_id}"
+            )
+        if format_contract_id and format_contract_id in known_contracts:
+            resolved_contract = material_contract(str(item.get("id"))) if expected_contract_id else None
+            if resolved_contract and resolved_contract.get("output_format") != output_format:
+                errors.append(
+                    f"材料 {item.get('id', index)} 的版式合同输出格式为"
+                    f"{resolved_contract.get('output_format')}，与{output_format}不一致"
+                )
         if (
             format_profile == "official-exact"
             and item.get("included_in_batch") is not False

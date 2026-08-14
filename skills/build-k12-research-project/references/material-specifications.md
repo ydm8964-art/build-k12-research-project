@@ -1,6 +1,6 @@
 # 各类材料写作规格
 
-本文件规定内容结构；版式、Word表格和验收要求同时读取 [format-and-tables.md](format-and-tables.md)。涉及数据录入、编码、统计和材料台账时，同时读取 [spreadsheet-standards.md](spreadsheet-standards.md)。
+本文件规定内容结构；版式、Word表格和验收要求同时读取 [format-and-tables.md](format-and-tables.md)与[26项材料固定版式合同](material-format-contracts.md)。涉及数据录入、编码、统计和材料台账时，同时读取 [spreadsheet-standards.md](spreadsheet-standards.md)。
 
 ## 一、申请书/申报书
 

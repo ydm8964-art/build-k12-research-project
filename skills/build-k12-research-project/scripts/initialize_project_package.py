@@ -11,11 +11,13 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from apply_docx_format_contract import apply_in_place
 from build_generic_docx_templates import set_repeat_header, set_table_geometry, setup
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Mm
 from generate_attention_items import build_document as build_attention_document
+from manual_acceptance import pending_acceptance
 from project_blueprint import FOLDERS, materials_for_scope
 from validate_project_manifest import validate
 
@@ -79,6 +81,12 @@ def build_manifest(intake: dict) -> dict:
     requirements.setdefault("status", "pending")
     requirements.setdefault("year", intake["project"]["year"])
     requirements.setdefault("verified_at", None)
+    requirements.setdefault("search_run_id", None)
+    requirements.setdefault("searched_at", None)
+    requirements.setdefault("official_portals_checked", [])
+    requirements.setdefault("search_queries", [])
+    requirements.setdefault("policy_snapshot_file", None)
+    requirements.setdefault("policy_snapshot_sha256", None)
     requirements.setdefault("deadline", None)
     requirements.setdefault("notice_source_ids", [])
     requirements.setdefault("template_source_ids", [])
@@ -88,12 +96,13 @@ def build_manifest(intake: dict) -> dict:
     requirements.setdefault("file_rules", {"max_size_mb": None, "naming_rule": None, "copies": None})
 
     manifest = {
-        "schema_version": "1.3",
+        "schema_version": "1.6",
         "project": intake["project"],
         "project_context": intake.get("project_context", {}),
         "problem_context": intake.get("problem_context", {}),
         "governance": intake["governance"],
         "generation_contract": generation,
+        "manual_acceptance": pending_acceptance(),
         "submission_requirements": requirements,
         "contributors": intake.get("contributors", []),
         "subject_coverage": intake.get("subject_coverage", []),
@@ -204,12 +213,14 @@ def initialize(intake_path: Path, root: Path, skill_root: Path) -> Path:
 
     build_index(manifest, index_target)
     sync_index_row(manifest, index_target)
+    apply_in_place(index_target, "M25")
     material_by_id["M25"]["sha256"] = sha256(index_target)
 
     from datetime import date
 
     attention_day = date.fromisoformat(str(manifest["governance"]["current_date"]))
     build_attention_document(manifest, attention_target, attention_day)
+    apply_in_place(attention_target, "M00")
     material_by_id["M00"]["sha256"] = sha256(attention_target)
 
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

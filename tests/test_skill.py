@@ -14,6 +14,8 @@ from unittest import mock
 from xml.etree import ElementTree as ET
 
 import yaml
+from docx import Document
+from docx.shared import Pt
 
 REPO = Path(__file__).resolve().parents[1]
 SKILL = REPO / "skills" / "build-k12-research-project"
@@ -21,16 +23,23 @@ SCRIPTS = SKILL / "scripts"
 EXAMPLE = SKILL / "references" / "project-manifest.example.json"
 sys.path.insert(0, str(SCRIPTS))
 
+import apply_docx_format_contract  # noqa: E402
 import audit_content_integrity  # noqa: E402
 import audit_docx_format  # noqa: E402
+import audit_docx_style_contract  # noqa: E402
 import audit_lifecycle_coverage  # noqa: E402
 import audit_project_package  # noqa: E402
+import audit_xlsx_style_contract  # noqa: E402
+import build_delivery_archive  # noqa: E402
 import build_material_generation_plan  # noqa: E402
+import format_contracts  # noqa: E402
 import generate_attention_items  # noqa: E402
 import generate_topic_candidates  # noqa: E402
 import initialize_project_package  # noqa: E402
 import plan_incremental_refresh  # noqa: E402
 import project_workflow  # noqa: E402
+import record_manual_acceptance  # noqa: E402
+import record_policy_snapshot  # noqa: E402
 import refresh_package_controls  # noqa: E402
 import register_material_file  # noqa: E402
 import run_project_preflight  # noqa: E402
@@ -221,7 +230,8 @@ class SkillTests(unittest.TestCase):
                 final = run_project_preflight.run(manifest, root, final=True)
             self.assertEqual(working["status"], "passed")
             self.assertEqual(final["status"], "failed")
-            self.assertEqual(final["schema_version"], "1.2")
+            self.assertEqual(final["schema_version"], "1.4")
+            self.assertEqual({item["id"] for item in final["manual_gates"]}, set(record_manual_acceptance.MANUAL_GATES))
 
     def test_initializer_creates_full_lifecycle_scaffold(self) -> None:
         intake_path = SKILL / "references" / "project-intake.example.json"
@@ -229,7 +239,8 @@ class SkillTests(unittest.TestCase):
             root = Path(directory) / "示例材料包"
             manifest_path = initialize_project_package.initialize(intake_path, root, SKILL)
             data = json.loads(manifest_path.read_text(encoding="utf-8"))
-            self.assertEqual(data["schema_version"], "1.3")
+            self.assertEqual(data["schema_version"], "1.6")
+            self.assertEqual(data["manual_acceptance"]["status"], "pending")
             self.assertEqual(len(data["materials"]), 26)
             self.assertTrue(all(item["included_in_batch"] for item in data["materials"]))
             self.assertEqual(data["materials"][0]["status"], "draft")
@@ -241,6 +252,197 @@ class SkillTests(unittest.TestCase):
             errors, warnings = audit_lifecycle_coverage.audit(data, final=False)
             self.assertEqual(errors, [])
             self.assertFalse(any("缺少生命周期组" in value for value in warnings), warnings)
+            for material_id, filename in (
+                ("M00", "00_课题材料包注意事项_真实性与待办清单_v0.1.docx"),
+                ("M25", "M25_整套材料目录与交付索引_v0.1.docx"),
+            ):
+                style_errors, _ = audit_docx_style_contract.audit(root / filename, material_id)
+                self.assertEqual(style_errors, [], material_id)
+
+    def test_every_material_has_a_fixed_resolvable_format_contract(self) -> None:
+        catalog_errors = format_contracts.validate_contract_catalog()
+        self.assertEqual(catalog_errors, [])
+        catalog = format_contracts.load_contracts()
+        self.assertEqual(set(catalog["materials"]), {f"M{index:02d}" for index in range(26)})
+        body = format_contracts.material_contract("M21")["roles"]["body"]
+        self.assertEqual(
+            (body["font_east_asia"], body["font_ascii"], body["size_pt"], body["first_line_indent_pt"]),
+            ("仿宋_GB2312", "Times New Roman", 12.0, 24.0),
+        )
+        self.assertEqual(format_contracts.material_contract("M13")["roles"]["title"]["size_pt"], 16.0)
+
+    def test_format_contract_apply_and_audit_detects_typography_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "M21.docx"
+            apply_docx_format_contract.apply(
+                SKILL / "assets" / "templates" / "analysis-report.docx", target, "M21"
+            )
+            errors, _ = audit_docx_style_contract.audit(target, "M21")
+            self.assertEqual(errors, [])
+
+            document = Document(target)
+            paragraph = next(value for value in document.paragraphs if value.text.strip())
+            next(value for value in paragraph.runs if value.text.strip()).font.size = Pt(10)
+            document.save(target)
+            errors, _ = audit_docx_style_contract.audit(target, "M21")
+            self.assertTrue(any("字号应为" in value for value in errors), errors)
+
+    def test_role_audit_detects_heading_body_misclassification(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "source.docx"
+            target = Path(directory) / "M11.docx"
+            document = Document()
+            document.add_paragraph("现状诊断与综合分析报告")
+            document.add_paragraph("课题负责人：示例教师")
+            document.add_paragraph("研究背景")
+            document.add_paragraph("本研究立足课堂中已经观察到的真实问题，分析其表现、原因和改进条件。")
+            document.save(source)
+            result = apply_docx_format_contract.apply(source, target, "M11")
+            self.assertEqual(result["roles_applied"]["cover_metadata"], 1)
+            self.assertEqual(result["roles_applied"]["heading1"], 1)
+            errors, _ = audit_docx_style_contract.audit(target, "M11")
+            self.assertEqual(errors, [])
+
+            drifted = Document(target)
+            apply_docx_format_contract.apply_paragraph(
+                drifted.paragraphs[2], "body", format_contracts.material_contract("M11")
+            )
+            drifted.save(target)
+            errors, _ = audit_docx_style_contract.audit(target, "M11")
+            self.assertTrue(any("标题/正文角色冲突" in value for value in errors), errors)
+
+    def test_verified_policy_snapshot_must_be_project_fresh(self) -> None:
+        intake = json.loads((SKILL / "references" / "project-intake.example.json").read_text(encoding="utf-8"))
+        manifest = initialize_project_package.build_manifest(intake)
+        manifest["sources"] = [
+            {
+                "id": "POLICY-2026-01", "title": "2026年度官方通知", "source_type": "official-notice",
+                "verification_status": "verified", "verified_at": "2026-08-12", "valid_for_year": 2026,
+                "locator": "https://example.gov.cn/official-notice", "used_in": ["M01"],
+            },
+            {
+                "id": "TEMPLATE-2026-01", "title": "2026年度官方模板", "source_type": "official-template",
+                "verification_status": "verified", "verified_at": "2026-08-12", "valid_for_year": 2026,
+                "locator": "https://example.gov.cn/official-template", "used_in": ["M01"],
+                "local_file": "01政策与立项/2026年度官方模板.docx", "retrieved_at": "2026-08-12",
+                "source_sha256": "b" * 64,
+            },
+        ]
+        manifest["submission_requirements"].update(
+            {
+                "status": "verified", "verified_at": "2026-08-12", "search_run_id": "policy-20260812-01",
+                "searched_at": "2026-08-12", "official_portals_checked": ["贵州省教育厅"],
+                "search_queries": ["2026 贵州省教育科学规划课题 申报 官方"],
+                "policy_snapshot_file": "01政策与立项/当年要求核验快照_2026_2026-08-12.json",
+                "policy_snapshot_sha256": "a" * 64, "notice_source_ids": ["POLICY-2026-01"],
+                "template_source_ids": ["TEMPLATE-2026-01"], "submission_mode": "mixed",
+            }
+        )
+        errors, _ = validate_project_manifest.validate(manifest)
+        self.assertEqual(errors, [])
+        manifest["submission_requirements"]["searched_at"] = "2026-08-04"
+        errors, _ = validate_project_manifest.validate(manifest)
+        self.assertTrue(any("超过7天" in value for value in errors), errors)
+
+    def test_application_ready_is_blocked_after_deadline(self) -> None:
+        data = copy.deepcopy(self.example)
+        data["generation_contract"].update(
+            {"package_scope": "application-kit", "delivery_state": "application-ready", "truth_state": "planning"}
+        )
+        data["submission_requirements"].update(
+            {"status": "verified", "deadline": "2026-08-01", "searched_at": "2026-08-12"}
+        )
+        errors, _ = validate_project_manifest.validate(data)
+        self.assertTrue(any("申报截止日" in value and "application-ready" in value for value in errors), errors)
+
+    def test_record_policy_snapshot_writes_hashed_project_file(self) -> None:
+        intake = SKILL / "references" / "project-intake.example.json"
+        policy_example = json.loads(
+            (SKILL / "references" / "policy-search-input.example.json").read_text(encoding="utf-8")
+        )
+        policy_example["search_run_id"] = "policy-test-20260812"
+        policy_example["searched_at"] = "2026-08-12"
+        for source in policy_example["sources"]:
+            source["verified_at"] = "2026-08-12"
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            root = base / "package"
+            manifest_path = initialize_project_package.initialize(intake, root, SKILL)
+            template_source = SKILL / "assets" / "templates" / "research-form.docx"
+            for index, source in enumerate(
+                [item for item in policy_example["sources"] if item["id"] in policy_example["template_source_ids"]],
+                1,
+            ):
+                target = root / "01政策与立项" / f"official-template-{index}.docx"
+                target.write_bytes(template_source.read_bytes())
+                source.update(
+                    local_file=str(target.relative_to(root)),
+                    source_sha256=record_policy_snapshot.digest(target),
+                    retrieved_at="2026-08-12",
+                )
+            policy_input = base / "policy.json"
+            policy_input.write_text(json.dumps(policy_example, ensure_ascii=False), encoding="utf-8")
+            snapshot = record_policy_snapshot.record(manifest_path, root, policy_input)
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            requirements = manifest["submission_requirements"]
+            self.assertEqual(requirements["status"], "verified")
+            self.assertEqual(requirements["policy_snapshot_file"], str(snapshot.relative_to(root.resolve())))
+            self.assertEqual(requirements["policy_snapshot_sha256"], record_policy_snapshot.digest(snapshot))
+            self.assertEqual(manifest["schema_version"], "1.6")
+            self.assertTrue(manifest["materials"][1]["reference_template"])
+            errors, _ = validate_project_manifest.validate(manifest)
+            self.assertEqual(errors, [])
+
+            manual_input = base / "manual.json"
+            manual_input.write_text(
+                json.dumps(
+                    {
+                        "reviewed_at": "2026-08-12T16:00:00+08:00",
+                        "reviewer": "课题负责人",
+                        "gates": {
+                            gate_id: {"status": "passed", "note": f"已逐项复核：{description}"}
+                            for gate_id, description in record_manual_acceptance.MANUAL_GATES.items()
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            attestation = record_manual_acceptance.record(manifest_path, root, manual_input)
+            self.assertTrue(attestation.is_file())
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(manifest["manual_acceptance"]["status"], "verified")
+            manifest["project"]["school"] = "变更后的示例学校"
+            manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+            final_errors, _ = audit_project_package.audit(manifest_path, root, final=True)
+            self.assertTrue(any("主清单研究事实已变化" in value for value in final_errors), final_errors)
+            refresh_package_controls.refresh(manifest_path)
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(manifest["manual_acceptance"]["status"], "expired")
+
+    def test_scaffold_delivery_archive_contains_preflight_and_checksums(self) -> None:
+        intake = SKILL / "references" / "project-intake.example.json"
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            root = base / "package"
+            manifest = initialize_project_package.initialize(intake, root, SKILL)
+            output = base / "课题材料工作包.zip"
+            result = build_delivery_archive.build(manifest, root, output, final=False)
+            self.assertEqual(result["package_state"], "scaffold")
+            with zipfile.ZipFile(output) as archive:
+                self.assertIsNone(archive.testzip())
+                names = set(archive.namelist())
+                self.assertIn("project-manifest.json", names)
+                self.assertIn("交付校验/preflight-report.json", names)
+                self.assertIn("交付校验/SHA256SUMS.txt", names)
+
+    def test_final_package_requires_manual_acceptance(self) -> None:
+        intake = SKILL / "references" / "project-intake.example.json"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "package"
+            manifest = initialize_project_package.initialize(intake, root, SKILL)
+            errors, _ = audit_project_package.audit(manifest, root, final=True)
+            self.assertTrue(any("人工终审确认" in value for value in errors), errors)
 
     def test_excluded_official_forms_do_not_create_scope_warnings(self) -> None:
         intake = json.loads((SKILL / "references" / "project-intake.example.json").read_text(encoding="utf-8"))
@@ -382,6 +584,8 @@ class SkillTests(unittest.TestCase):
         self.assertEqual(application["execution_state"], "blocked-template")
         self.assertIn("当年官方模板或用户指定同类模板", application["truth_blockers_for_finalization"])
         self.assertIn("真实原始数据或实施记录", final_report["truth_blockers_for_finalization"])
+        self.assertEqual(final_report["format_contract_id"], "final-report-fixed")
+        self.assertEqual(final_report["resolved_format_contract"]["roles"]["body"]["first_line_indent_pt"], 24.0)
         self.assertTrue(all(job["source_manifest_fields"] and job["completion_gate"] for job in plan["jobs"]))
         self.assertTrue(plan["waiting_jobs"])
 
@@ -631,6 +835,20 @@ class SkillTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        style_errors, style_warnings = audit_xlsx_style_contract.audit(source)
+        self.assertEqual(style_errors, [])
+        self.assertEqual(style_warnings, [])
+
+        with tempfile.TemporaryDirectory() as directory:
+            drifted = Path(directory) / "drifted.xlsx"
+            with zipfile.ZipFile(source) as source_zip, zipfile.ZipFile(drifted, "w") as target_zip:
+                for info in source_zip.infolist():
+                    content = source_zip.read(info.filename)
+                    if info.filename == "xl/styles.xml":
+                        content = content.replace(b"Microsoft YaHei", b"Arial", 1)
+                    target_zip.writestr(info, content)
+            drift_errors, _ = audit_xlsx_style_contract.audit(drifted)
+            self.assertTrue(any("styles.xml" in value or "全簿字体" in value for value in drift_errors), drift_errors)
 
     def test_final_standalone_audit_blocks_warnings(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

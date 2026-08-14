@@ -8,6 +8,7 @@ import json
 import sys
 from pathlib import Path
 
+from format_contracts import material_contract
 from validate_project_manifest import validate
 
 ROLE_CONTRACTS = {
@@ -99,6 +100,8 @@ def build(manifest: dict) -> dict:
     if errors:
         raise ValueError("主清单未通过校验：" + "；".join(errors))
     materials = [item for item in manifest["materials"] if item.get("included_in_batch")]
+    requirements = manifest.get("submission_requirements", {})
+    policy_verified = isinstance(requirements, dict) and requirements.get("status") == "verified"
     waves = topological_waves(materials)
     wave_by_id = {item_id: index for index, wave in enumerate(waves, 1) for item_id in wave}
     jobs = []
@@ -108,12 +111,21 @@ def build(manifest: dict) -> dict:
         blockers = list(TRUTH_REQUIREMENTS.get(item["status"], []))
         if item["format_profile"] == "official-exact" and not item.get("reference_template"):
             blockers.append("当年官方模板或用户指定同类模板")
+        if item["format_profile"] == "official-exact" and not policy_verified:
+            blockers.append("完成本项目实时官方政策检索并登记verified要求快照")
         target_path = item.get("file_path") or item.get("planned_file_path")
+        format_contract_id = item.get("format_contract_id")
+        fixed_format = material_contract(item["id"]) if format_contract_id else None
+        if not format_contract_id:
+            blockers.append("升级主清单并为材料绑定固定format_contract_id")
         jobs.append({
             "job_id": f"JOB-{item['id']}", "material_id": item["id"], "name": item["name"],
             "wave": wave_by_id[item["id"]], "stage": item["stage"], "depends_on": item.get("depends_on", []),
             "current_status": item["status"], "target_path": target_path,
             "output_format": item["output_format"], "format_profile": item["format_profile"],
+            "format_contract_id": format_contract_id,
+            "format_contract_reference": "references/material-format-contracts.json",
+            "resolved_format_contract": fixed_format,
             "reference_template": item.get("reference_template"), "source_manifest_fields": list(source_fields),
             "required_skill_references": REFERENCE_ROUTING.get(role, DEFAULT_REFERENCES),
             "content_contract": contract,
@@ -121,7 +133,10 @@ def build(manifest: dict) -> dict:
             "execution_state": "waiting-dependency",
             "allowed_now": "生成结构和基于已登记事实的工作稿；缺失未来事实使用结构化待办，禁止编造",
             "work_action": "revise-and-qa" if item.get("file_path") else "create-and-qa",
-            "completion_gate": ["内容QA", "格式QA", "逐页或逐表渲染QA", "隐私QA", "登记文件路径和SHA-256"],
+            "completion_gate": [
+                "内容QA", "标题/正文语义角色与固定字体字号段落合同QA", "结构格式QA",
+                "逐页或逐表渲染QA", "隐私QA", "登记文件路径和SHA-256",
+            ],
         })
     by_id = {item["id"]: item for item in materials}
     terminal = {"ready", "submitted", "archived"}
@@ -138,8 +153,14 @@ def build(manifest: dict) -> dict:
         if all(dep["status"] in dependency_available and dep.get("file_path") for dep in dependencies):
             if job["execution_state"] == "blocked-template":
                 blocked_jobs.append(job["job_id"])
+            elif any(value.startswith("升级主清单") for value in job["truth_blockers_for_finalization"]):
+                job["execution_state"] = "blocked-format-contract"
+                blocked_jobs.append(job["job_id"])
             elif any("当年官方模板或用户指定同类模板" == value for value in job["truth_blockers_for_finalization"]):
                 job["execution_state"] = "blocked-template"
+                blocked_jobs.append(job["job_id"])
+            elif any(value.startswith("完成本项目实时官方政策检索") for value in job["truth_blockers_for_finalization"]):
+                job["execution_state"] = "blocked-policy-snapshot"
                 blocked_jobs.append(job["job_id"])
             elif material["status"] in TRUTH_REQUIREMENTS and material.get("file_path") and not truth_inputs_ready(manifest, material["status"]):
                 job["execution_state"] = "waiting-truth-input"
@@ -160,12 +181,18 @@ def build(manifest: dict) -> dict:
         "schema_version": "1.1", "snapshot_id": manifest["generation_contract"].get("snapshot_id"),
         "package_scope": manifest["generation_contract"]["package_scope"],
         "truth_state": manifest["generation_contract"]["truth_state"],
+        "policy_search_gate": {
+            "status": "passed" if policy_verified else "pending",
+            "search_run_id": requirements.get("search_run_id") if isinstance(requirements, dict) else None,
+            "searched_at": requirements.get("searched_at") if isinstance(requirements, dict) else None,
+        },
         "warnings": warnings, "wave_count": len(waves), "waves": waves,
         "material_job_count": len(jobs), "unfinished_jobs": unfinished_jobs,
         "next_jobs": next_jobs, "blocked_jobs": blocked_jobs, "waiting_jobs": waiting_jobs, "jobs": jobs,
         "agent_loop": [
             "只处理依赖已满足的next_jobs", "从source_manifest_fields读取唯一事实，不在单份文档内另造事实",
-            "用reference_template或对应通用母版制作文件", "完成内容、格式、渲染、隐私及适用的数据/照片QA",
+            "用reference_template或对应通用母版制作文件；非官方DOCX强制应用resolved_format_contract",
+            "完成内容、固定字体字号与段落合同、结构格式、渲染、隐私及适用的数据/照片QA",
             "用register_material_file.py登记文件和状态；待真实输入的骨架不得反复生成",
             "真实数据或照片登记进主清单后重新生成本计划，继续下一批，直到所有可完成任务处理完毕",
         ],

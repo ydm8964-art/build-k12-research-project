@@ -10,8 +10,10 @@ import sys
 from datetime import date, datetime
 from pathlib import Path
 
+from apply_docx_format_contract import apply_in_place
 from generate_attention_items import build_document as build_attention_document
 from initialize_project_package import build_index, sha256, sync_index_row
+from manual_acceptance import invalidate_manual_acceptance
 from validate_project_manifest import validate
 
 
@@ -41,10 +43,13 @@ def refresh(manifest_path: Path) -> dict:
         reset_qa(item)
     as_of = date.fromisoformat(str(data["governance"]["current_date"]))
     build_attention_document(data, attention_path, as_of)
+    apply_in_place(attention_path, "M00")
     attention["sha256"] = sha256(attention_path)
     build_index(data, index_path)
     sync_index_row(data, index_path)
+    apply_in_place(index_path, "M25")
     index["sha256"] = sha256(index_path)
+    invalidate_manual_acceptance(data, "注意事项或交付索引已重新生成")
     errors, warnings = validate(data)
     if errors:
         raise ValueError("刷新后主清单无效：\n- " + "\n- ".join(errors))

@@ -12,10 +12,13 @@ from pathlib import Path
 from audit_casebook_integrity import audit as audit_casebook
 from audit_content_integrity import audit as audit_content
 from audit_docx_format import audit as audit_docx_format
+from audit_docx_style_contract import audit as audit_docx_style_contract
 from audit_lifecycle_coverage import audit as audit_lifecycle
 from audit_photo_evidence import audit as audit_photo
 from audit_project_package import audit as audit_package
 from audit_xlsx_structure import audit as audit_xlsx
+from audit_xlsx_style_contract import audit as audit_xlsx_style_contract
+from manual_acceptance import MANUAL_GATES
 
 
 def resolve_path(root: Path, value: str | None) -> Path | None:
@@ -87,6 +90,11 @@ def run(manifest_path: Path, root: Path, final: bool) -> dict:
             except Exception as exc:
                 errors, warnings = [f"审计执行失败：{exc}"], []
             add_result(checks, "xlsx-structure", str(path), errors, warnings, material_id)
+            try:
+                errors, warnings = audit_xlsx_style_contract(path, material_id)
+            except Exception as exc:
+                errors, warnings = [f"审计执行失败：{exc}"], []
+            add_result(checks, "xlsx-style-contract", str(path), errors, warnings, material_id)
             continue
         if path.suffix.lower() != ".docx":
             continue
@@ -116,6 +124,12 @@ def run(manifest_path: Path, root: Path, final: bool) -> dict:
                 errors, warnings = [f"审计执行失败：{exc}"], []
         add_result(checks, "docx-format", str(path), errors, warnings, material_id)
 
+        try:
+            errors, warnings = audit_docx_style_contract(path, material_id, reference)
+        except Exception as exc:
+            errors, warnings = [f"审计执行失败：{exc}"], []
+        add_result(checks, "docx-style-contract", str(path), errors, warnings, material_id)
+
         if item.get("material_role") in {"case", "casebook"}:
             try:
                 errors, warnings = audit_casebook(path, manifest_path, final)
@@ -135,7 +149,7 @@ def run(manifest_path: Path, root: Path, final: bool) -> dict:
     warning_count = sum(len(item["warnings"]) for item in checks)
     strict_failure = bool(error_count or (final and warning_count))
     return {
-        "schema_version": "1.2",
+        "schema_version": "1.4",
         "run_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "manifest": str(manifest_path),
         "root": str(root),
@@ -144,12 +158,14 @@ def run(manifest_path: Path, root: Path, final: bool) -> dict:
         "error_count": error_count,
         "warning_count": warning_count,
         "checks": checks,
+        "manual_acceptance": data.get("manual_acceptance", {"status": "pending"}),
         "manual_gates": [
-            "按当年官方通知核对报送系统、限额、命名、份数、签章和截止时间",
-            "DOCX/PDF逐页渲染检查并更新目录、页码、题注和交叉引用",
-            "XLSX逐工作表视觉检查、公式复算及Word/PDF数值回查",
-            "照片真实性、人物授权/打码、学科事实、署名与签章人工复核",
-            "打开00_课题材料包注意事项文件，逐条确认责任人、最迟时间、完成标准和已解决事项",
+            {
+                "id": gate_id,
+                "description": description,
+                "status": "attested" if data.get("manual_acceptance", {}).get("status") == "verified" else "pending",
+            }
+            for gate_id, description in MANUAL_GATES.items()
         ],
     }
 
